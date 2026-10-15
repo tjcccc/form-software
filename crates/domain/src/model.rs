@@ -1,0 +1,307 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::BTreeMap;
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+pub type Values = BTreeMap<Uuid, Value>;
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct User {
+    pub id: Uuid,
+    pub username: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct Workspace {
+    pub id: Uuid,
+    pub name: String,
+    pub slug: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionInfo {
+    pub user: User,
+    pub workspace: Workspace,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Login {
+    pub username: String,
+    pub password: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct LoginResult {
+    pub token: String,
+    pub session: SessionInfo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FormKind {
+    Standard,
+    Options,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct Form {
+    pub id: Uuid,
+    pub workspace_id: Uuid,
+    pub key: String,
+    pub name: String,
+    pub description: String,
+    pub kind: FormKind,
+    pub icon: String,
+    pub record_count: i64,
+    pub archived_at: Option<DateTime<Utc>>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateForm {
+    pub key: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default = "standard")]
+    pub kind: FormKind,
+    #[serde(default = "default_icon")]
+    pub icon: String,
+}
+fn standard() -> FormKind {
+    FormKind::Standard
+}
+fn default_icon() -> String {
+    "table".into()
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateForm {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub archived: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldType {
+    ShortText,
+    LongText,
+    Integer,
+    Decimal,
+    Boolean,
+    Date,
+    DateTime,
+    Duration,
+    Url,
+    Relation,
+    Attachment,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Cardinality {
+    One,
+    Many,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Presentation {
+    Select,
+    RecordPicker,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FieldConfig {
+    pub target_form_id: Option<Uuid>,
+    pub cardinality: Option<Cardinality>,
+    pub presentation: Option<Presentation>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct Field {
+    pub id: Uuid,
+    pub form_id: Uuid,
+    pub key: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: FieldType,
+    pub required: bool,
+    pub position: i32,
+    pub config: FieldConfig,
+    pub archived_at: Option<DateTime<Utc>>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateField {
+    pub key: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: FieldType,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub config: FieldConfig,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateField {
+    pub name: Option<String>,
+    pub position: Option<i32>,
+    pub required: Option<bool>,
+    pub archived: Option<bool>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct FormSchema {
+    pub form: Form,
+    pub fields: Vec<Field>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct Record {
+    pub id: Uuid,
+    pub form_id: Uuid,
+    #[schema(value_type = BTreeMap<String, serde_json::Value>)]
+    pub values: Values,
+    pub version: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Uuid,
+    pub updated_by: Uuid,
+    pub attachments: Vec<Attachment>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateRecord {
+    #[schema(value_type = BTreeMap<String, serde_json::Value>)]
+    pub values: Values,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateRecord {
+    #[schema(value_type = BTreeMap<String, serde_json::Value>)]
+    pub values: Values,
+    pub expected_version: i32,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VersionCheck {
+    pub expected_version: i32,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct Attachment {
+    pub id: Uuid,
+    pub field_id: Uuid,
+    pub record_id: Uuid,
+    pub filename: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterOp {
+    Eq,
+    Contains,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Empty,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Filter {
+    pub field_id: Uuid,
+    pub op: FilterOp,
+    pub value: Value,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct Sort {
+    pub field_id: Uuid,
+    pub descending: bool,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct RecordQuery {
+    pub q: Option<String>,
+    pub filter: Option<String>,
+    pub sort: Option<Uuid>,
+    #[serde(default)]
+    pub descending: bool,
+    pub cursor: Option<u32>,
+    pub limit: Option<u32>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecordPage {
+    pub records: Vec<Record>,
+    pub total: i64,
+    pub next_cursor: Option<u32>,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ViewConfig {
+    #[serde(default)]
+    #[schema(required = true)]
+    pub columns: Vec<ColumnLayout>,
+    pub sort: Option<Sort>,
+    #[serde(default)]
+    #[schema(required = true)]
+    pub filters: Vec<Filter>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ColumnLayout {
+    pub field_id: Uuid,
+    pub width: u32,
+    pub hidden: bool,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct View {
+    pub id: Uuid,
+    pub form_id: Uuid,
+    pub name: String,
+    pub config: ViewConfig,
+    pub is_default: bool,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SaveView {
+    pub name: String,
+    pub config: ViewConfig,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct FieldIssue {
+    pub field_id: Option<Uuid>,
+    pub message: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ApiError {
+    pub code: String,
+    pub message: String,
+    pub issues: Vec<FieldIssue>,
+    pub current: Option<Record>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ImportMapping {
+    pub column: String,
+    pub field_id: Uuid,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ImportRequest {
+    pub form_id: Uuid,
+    pub csv: String,
+    pub mapping: Vec<ImportMapping>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ImportRow {
+    pub row: usize,
+    #[schema(value_type = BTreeMap<String, serde_json::Value>)]
+    pub values: Values,
+    pub issues: Vec<FieldIssue>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ImportPreview {
+    pub columns: Vec<String>,
+    pub rows: Vec<ImportRow>,
+    pub valid: bool,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ImportResult {
+    pub created: usize,
+}

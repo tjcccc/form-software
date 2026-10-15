@@ -1,0 +1,21 @@
+{
+  "name": "formsoftware",
+  "private": true,
+  "version": "0.2.0",
+  "packageManager": "pnpm@12.9.1",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "pnpm --dir web build",
+    "check": "pnpm --dir web check",
+    "format": "prettier --write web/src docs spec README.md package.json",
+    "contracts": "cargo run -q -p form-server -- --openapi > contracts/openapi.json && openapi-typescript contracts/openapi.json -o web/src/api/schema.d.ts",
+    "test:api": "node scripts/test-api.mjs",
+    "dev:setup": "node scripts/dev.mjs setup",
+    "desktop": "cargo run -p form-desktop",
+    "backup:check": "node scripts/backup-check.mjs"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "prettier": "^3.8.0"
+  }
+}

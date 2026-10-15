@@ -1,0 +1,26 @@
+[workspace]
+members = ["crates/domain", "crates/persistence", "crates/server", "crates/api-client", "crates/cli", "crates/desktop"]
+default-members = ["crates/domain", "crates/persistence", "crates/server", "crates/api-client", "crates/cli"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+form-domain = { path = "crates/domain" }
+form-persistence = { path = "crates/persistence" }
+form-api-client = { path = "crates/api-client" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+utoipa = { version = "5", features = ["uuid", "chrono"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "blocking"] }
+
+[profile.dev]
+debug = 1

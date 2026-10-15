@@ -1,0 +1,22 @@
+[Unit]
+Description=FormSoftware API and web workspace
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=formsoftware
+Group=formsoftware
+WorkingDirectory=/opt/formsoftware
+EnvironmentFile=/etc/formsoftware/server.env
+ExecStart=/opt/formsoftware/form-server
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/formsoftware
+
+[Install]
+WantedBy=multi-user.target

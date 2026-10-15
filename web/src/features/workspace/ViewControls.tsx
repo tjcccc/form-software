@@ -1,0 +1,393 @@
+import { useState } from "react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Columns3, Filter, ListFilter, Plus, Save, SlidersHorizontal, X } from "lucide-react";
+import { Popover } from "../../components/Popover";
+import type { Catalogs, Field, Filter as FilterRule, FormSchema, View, ViewConfig } from "../../api/types";
+import { FieldIcon } from "../../components/Icons";
+import { message } from "../../api/client";
+import { titleOf } from "../records/values";
+export function ViewControls({
+  schema,
+  views,
+  viewId,
+  config,
+  catalogs,
+  onView,
+  onChange,
+  onSaved,
+  onDesigner,
+  onNotice,
+}: {
+  schema: FormSchema;
+  views: View[];
+  viewId: string;
+  config: ViewConfig;
+  catalogs: Catalogs;
+  onView: (id: string) => void;
+  onChange: (config: ViewConfig) => void;
+  onSaved: (name: string) => Promise<void>;
+  onDesigner: () => void;
+  onNotice: (message: string) => void;
+}) {
+  const [viewName, setViewName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const fields = schema.fields.filter((f) => !f.archived_at);
+  const current = views.find((v) => v.id === viewId);
+  const changed = current && JSON.stringify(current.config) !== JSON.stringify(config);
+  async function save(name: string) {
+    setBusy(true);
+    try {
+      await onSaved(name);
+      onNotice("View saved.");
+      setViewName("");
+    } catch (e) {
+      onNotice(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="view-controls">
+      <Popover
+        label={
+          <>
+            <ListFilter size={15} />
+            <span>{current?.name ?? "All records"}</span>
+            {changed && <span className="unsaved-dot" title="Unsaved view changes" />}
+            <ChevronDown size={12} />
+          </>
+        }
+      >
+        <p className="popover-label">SAVED VIEWS</p>
+        {views.map((view) => (
+          <button className="menu-item" key={view.id} onClick={() => onView(view.id)}>
+            <span>{view.name}</span>
+            {viewId === view.id && <Check size={14} />}
+          </button>
+        ))}
+        <div className="popover-divider" />
+        <form
+          className="save-view-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save(viewName);
+          }}
+        >
+          <input
+            aria-label="New view name"
+            placeholder="Name a new view…"
+            required
+            maxLength={100}
+            value={viewName}
+            onChange={(e) => setViewName(e.target.value)}
+          />
+          <button className="icon-button" aria-label="Save new view" disabled={busy || !viewName.trim()}>
+            <Plus size={15} />
+          </button>
+        </form>
+        {changed && current && (
+          <button className="menu-item" disabled={busy} onClick={() => void save(current.name)}>
+            <Save size={14} />
+            Save changes to this view
+          </button>
+        )}
+      </Popover>
+      <span className="toolbar-divider" />
+      <Popover
+        active={config.filters.length > 0}
+        label={
+          <>
+            <Filter size={14} />
+            <span>Filter</span>
+            {config.filters.length > 0 && <span className="control-count">{config.filters.length}</span>}
+          </>
+        }
+      >
+        <FilterEditor
+          fields={fields}
+          filters={config.filters}
+          catalogs={catalogs}
+          onChange={(filters) => onChange({ ...config, filters })}
+        />
+      </Popover>
+      <Popover
+        active={!!config.sort}
+        label={
+          <>
+            <SlidersHorizontal size={14} />
+            <span>Sort</span>
+            {config.sort && <span className="control-count">1</span>}
+          </>
+        }
+      >
+        <p className="popover-label">SORT RECORDS</p>
+        <div className="popover-fields">
+          <select
+            aria-label="Sort field"
+            value={config.sort?.field_id ?? ""}
+            onChange={(e) =>
+              onChange({
+                ...config,
+                sort: e.target.value ? { field_id: e.target.value, descending: config.sort?.descending ?? false } : null,
+              })
+            }
+          >
+            <option value="">Recently created</option>
+            {fields
+              .filter((f) => !["relation", "attachment"].includes(f.type))
+              .map((f) => (
+                <option value={f.id} key={f.id}>
+                  {f.name}
+                </option>
+              ))}
+          </select>
+          {config.sort && (
+            <select
+              aria-label="Sort direction"
+              value={String(config.sort.descending)}
+              onChange={(e) => onChange({ ...config, sort: { field_id: config.sort!.field_id, descending: e.target.value === "true" } })}
+            >
+              <option value="false">Ascending ↑</option>
+              <option value="true">Descending ↓</option>
+            </select>
+          )}
+        </div>
+      </Popover>
+      <Popover
+        label={
+          <>
+            <Columns3 size={15} />
+            <span>Fields</span>
+          </>
+        }
+      >
+        <p className="popover-label">VISIBLE FIELDS</p>
+        <div className="column-settings">
+          {[...fields]
+            .sort((a, b) => {
+              const ai = config.columns.findIndex((c) => c.field_id === a.id);
+              const bi = config.columns.findIndex((c) => c.field_id === b.id);
+              return (ai === -1 ? 1000 + a.position : ai) - (bi === -1 ? 1000 + b.position : bi);
+            })
+            .map((field, index, ordered) => {
+              const column = config.columns.find((c) => c.field_id === field.id);
+              const hidden = column?.hidden ?? index >= 6;
+              function update(patch: Partial<ViewConfig["columns"][number]>) {
+                const columns = ordered.map(
+                  (f, i) =>
+                    config.columns.find((c) => c.field_id === f.id) ?? {
+                      field_id: f.id,
+                      hidden: i >= 6,
+                      width: f.key === "name" ? 350 : 156,
+                    },
+                );
+                onChange({ ...config, columns: columns.map((c) => (c.field_id === field.id ? { ...c, ...patch } : c)) });
+              }
+              function move(delta: number) {
+                const columns = ordered.map(
+                  (f, i) =>
+                    config.columns.find((c) => c.field_id === f.id) ?? {
+                      field_id: f.id,
+                      hidden: i >= 6,
+                      width: f.key === "name" ? 350 : 156,
+                    },
+                );
+                [columns[index], columns[index + delta]] = [columns[index + delta], columns[index]];
+                onChange({ ...config, columns });
+              }
+              return (
+                <div className="column-setting" key={field.id}>
+                  <label>
+                    <input type="checkbox" checked={!hidden} onChange={() => update({ hidden: !hidden })} />
+                    <FieldIcon type={field.type} />
+                    <span>{field.name}</span>
+                  </label>
+                  <input
+                    className="width-input"
+                    type="number"
+                    aria-label={`${field.name} column width`}
+                    value={column?.width ?? (field.key === "name" ? 350 : 156)}
+                    min={100}
+                    max={800}
+                    step={10}
+                    onChange={(e) => update({ width: Math.min(800, Math.max(100, Number(e.target.value))) })}
+                  />
+                  <button
+                    className="icon-button"
+                    aria-label={`Move ${field.name} column up`}
+                    disabled={index === 0}
+                    onClick={() => move(-1)}
+                  >
+                    <ArrowUp size={12} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    aria-label={`Move ${field.name} column down`}
+                    disabled={index === ordered.length - 1}
+                    onClick={() => move(1)}
+                  >
+                    <ArrowDown size={12} />
+                  </button>
+                </div>
+              );
+            })}
+        </div>
+        <div className="popover-divider" />
+        <button className="menu-item" onClick={onDesigner}>
+          <SlidersHorizontal size={14} />
+          Edit form structure
+        </button>
+      </Popover>
+    </div>
+  );
+}
+function FilterEditor({
+  fields,
+  filters,
+  catalogs,
+  onChange,
+}: {
+  fields: Field[];
+  filters: FilterRule[];
+  catalogs: Catalogs;
+  onChange: (filters: FilterRule[]) => void;
+}) {
+  const [draft, setDraft] = useState(filters);
+  const operators = (field?: Field) =>
+    field?.type === "attachment"
+      ? [["empty", "is empty"]]
+      : field?.type === "boolean" || field?.type === "relation"
+        ? [
+            ["eq", "is"],
+            ["empty", "is empty"],
+          ]
+        : [
+            ["eq", "is"],
+            ...(["short_text", "long_text", "url"].includes(field?.type ?? "")
+              ? [["contains", "contains"]]
+              : [
+                  ["gt", "is greater than"],
+                  ["gte", "is at least"],
+                  ["lt", "is less than"],
+                  ["lte", "is at most"],
+                ]),
+            ["empty", "is empty"],
+          ];
+  function update(index: number, patch: Partial<FilterRule>) {
+    setDraft((old) => old.map((f, i) => (i === index ? { ...f, ...patch } : f)));
+  }
+  return (
+    <div className="filter-editor">
+      <p className="popover-label">MATCH ALL CONDITIONS</p>
+      {!draft.length && <p className="popover-description">Show only the records you need.</p>}
+      {draft.map((filter, index) => {
+        const field = fields.find((f) => f.id === filter.field_id);
+        const catalog = catalogs[field?.config.target_form_id ?? ""];
+        return (
+          <div className="filter-rule" key={index}>
+            <div className="filter-rule-top">
+              <select
+                aria-label={`Filter ${index + 1} field`}
+                value={filter.field_id}
+                onChange={(e) => {
+                  const next = fields.find((f) => f.id === e.target.value);
+                  update(index, {
+                    field_id: e.target.value,
+                    op: next?.type === "attachment" ? "empty" : "eq",
+                    value: next?.type === "boolean" ? true : "",
+                  });
+                }}
+              >
+                {fields.map((f) => (
+                  <option value={f.id} key={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="icon-button"
+                aria-label="Remove filter"
+                onClick={() => setDraft((old) => old.filter((_, i) => i !== index))}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <select
+              aria-label={`Filter ${index + 1} operator`}
+              value={filter.op}
+              onChange={(e) => update(index, { op: e.target.value as FilterRule["op"] })}
+            >
+              {operators(field).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            {filter.op !== "empty" &&
+              (field?.type === "relation" ? (
+                <select
+                  aria-label="Related record"
+                  value={String(filter.value ?? "")}
+                  onChange={(e) => update(index, { value: e.target.value })}
+                >
+                  <option value="">Choose a record…</option>
+                  {catalog?.records.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {titleOf(r, catalog.schema)}
+                    </option>
+                  ))}
+                </select>
+              ) : field?.type === "boolean" ? (
+                <select
+                  aria-label="Boolean value"
+                  value={String(filter.value)}
+                  onChange={(e) => update(index, { value: e.target.value === "true" })}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              ) : (
+                <input
+                  aria-label={`Filter ${index + 1} value`}
+                  type={
+                    field?.type === "date" ? "date" : ["integer", "duration", "decimal"].includes(field?.type ?? "") ? "number" : "text"
+                  }
+                  placeholder="Value…"
+                  value={String(filter.value ?? "")}
+                  onChange={(e) =>
+                    update(index, { value: ["integer", "duration"].includes(field?.type ?? "") ? Number(e.target.value) : e.target.value })
+                  }
+                />
+              ))}
+          </div>
+        );
+      })}
+      <button
+        className="text-button"
+        onClick={() => {
+          const field = fields[0];
+          if (field) {
+            setDraft([...draft, { field_id: field.id, op: "eq", value: "" }]);
+          }
+        }}
+      >
+        <Plus size={13} />
+        Add condition
+      </button>
+      <div className="filter-actions">
+        <button
+          className="text-button"
+          onClick={() => {
+            setDraft([]);
+            onChange([]);
+          }}
+        >
+          Clear
+        </button>
+        <button className="button primary small" onClick={() => onChange(draft)}>
+          <Check size={13} />
+          Apply filters
+        </button>
+      </div>
+    </div>
+  );
+}

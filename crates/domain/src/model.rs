@@ -115,6 +115,8 @@ pub struct FieldConfig {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Field {
+    #[serde(default)]
+    pub description: String,
     pub id: Uuid,
     pub form_id: Uuid,
     pub key: String,
@@ -129,6 +131,9 @@ pub struct Field {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateField {
+    #[serde(default)]
+    pub description: String,
+    pub position: Option<i32>,
     pub key: String,
     pub name: String,
     #[serde(rename = "type")]
@@ -141,6 +146,7 @@ pub struct CreateField {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateField {
+    pub description: Option<String>,
     pub name: Option<String>,
     pub position: Option<i32>,
     pub required: Option<bool>,
@@ -169,6 +175,15 @@ pub struct Record {
 pub struct CreateRecord {
     #[schema(value_type = BTreeMap<String, serde_json::Value>)]
     pub values: Values,
+}
+/// Create a validated record next to an existing record in manual table order.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InsertRecord {
+    #[schema(value_type = BTreeMap<String, serde_json::Value>)]
+    pub values: Values,
+    pub before: bool,
+    pub expected_version: i32,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -217,6 +232,7 @@ pub struct Sort {
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct RecordQuery {
+    pub group_by: Option<Uuid>,
     pub q: Option<String>,
     pub filter: Option<String>,
     pub sort: Option<Uuid>,
@@ -226,14 +242,28 @@ pub struct RecordQuery {
     pub limit: Option<u32>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecordGroup {
+    #[schema(value_type = serde_json::Value)]
+    pub value: Value,
+    pub count: i64,
+}
+fn freeze_default() -> bool {
+    true
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RecordPage {
+    #[serde(default)]
+    pub groups: Vec<RecordGroup>,
     pub records: Vec<Record>,
     pub total: i64,
     pub next_cursor: Option<u32>,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ViewConfig {
+    pub group_by: Option<Uuid>,
+    #[serde(default = "freeze_default")]
+    pub freeze_first: bool,
     #[serde(default)]
     #[schema(required = true)]
     pub columns: Vec<ColumnLayout>,
@@ -241,6 +271,17 @@ pub struct ViewConfig {
     #[serde(default)]
     #[schema(required = true)]
     pub filters: Vec<Filter>,
+}
+impl Default for ViewConfig {
+    fn default() -> Self {
+        Self {
+            group_by: None,
+            freeze_first: true,
+            columns: vec![],
+            sort: None,
+            filters: vec![],
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ColumnLayout {
@@ -261,6 +302,11 @@ pub struct View {
 pub struct SaveView {
     pub name: String,
     pub config: ViewConfig,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateColumnWidth {
+    pub width: u32,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FieldIssue {

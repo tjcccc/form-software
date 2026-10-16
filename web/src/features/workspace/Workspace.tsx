@@ -15,12 +15,15 @@ import {
   Table2,
   X,
 } from "lucide-react";
-import type { DataRecord, Field, Form, Session } from "../../api/types";
+import type { DataRecord, Form, Session } from "../../api/types";
 import { useWorkspace } from "./useWorkspace";
 import { RecordTable } from "../records/RecordTable";
 import { RecordInspector } from "../records/RecordInspector";
 import { SchemaDesigner } from "../schema/SchemaDesigner";
 import { CsvImport } from "../records/CsvImport";
+import { FieldDialog } from "../schema/FieldDialog";
+import { useFieldActions } from "./useFieldActions";
+import { FilterEditor } from "./ViewControls";
 import { ViewControls } from "./ViewControls";
 import { Dialog, ErrorNotice } from "../../components/Dialog";
 import { Popover } from "../../components/Popover";
@@ -30,11 +33,13 @@ export function Workspace({
   forms,
   session,
   onFormsChanged,
+  onNavigateForm,
 }: {
   formId: string;
   forms: Form[];
   session: Session;
   onFormsChanged: () => void;
+  onNavigateForm: (id: string) => void;
 }) {
   const state = useWorkspace(formId);
   const { schema, page, config, catalogs, loading } = state;
@@ -56,7 +61,14 @@ export function Workspace({
     const key = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       const editing = ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable;
-      if (editing || document.querySelector("dialog[open]") || event.ctrlKey || event.metaKey || event.altKey) {
+      if (
+        editing ||
+        target.closest(".inline-cell-editor, .record-context-menu") ||
+        document.querySelector("dialog[open]") ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      ) {
         return;
       }
       if (event.key === "/") {
@@ -79,18 +91,6 @@ export function Workspace({
     state.refresh();
     onFormsChanged();
   }
-  function sort(field: Field) {
-    const current = config.sort;
-    state.changeConfig({
-      ...config,
-      sort:
-        current?.field_id === field.id
-          ? current.descending
-            ? null
-            : { field_id: field.id, descending: true }
-          : { field_id: field.id, descending: false },
-    });
-  }
   function select(record: DataRecord) {
     if (inspecting && inspecting.id !== record.id) {
       setNotice("Close the current record before opening another.");
@@ -102,6 +102,15 @@ export function Workspace({
     }
     setInspecting(record);
   }
+  const fields = useFieldActions({
+    schema,
+    config,
+    onConfig: state.changeConfig,
+    onChanged: changed,
+    onNavigate: onNavigateForm,
+    onNotice: setNotice,
+    blocked: inspecting !== undefined,
+  });
   const duration = schema?.fields.find((f) => f.type === "duration" && !f.archived_at);
   const totalMinutes = duration
     ? page.records.reduce((total, r) => total + (typeof r.values[duration.id] === "number" ? (r.values[duration.id] as number) : 0), 0)
@@ -159,6 +168,23 @@ export function Workspace({
               <span className="tab-count">{page.total}</span>
             </div>
             <div className="table-tabs-right">
+              <div
+                className={`column-width-status ${state.widths.error ? "has-error" : ""}`}
+                role={state.widths.error ? "alert" : "status"}
+              >
+                {state.widths.pending ? (
+                  "Saving widths…"
+                ) : state.widths.error ? (
+                  <>
+                    <span title={state.widths.error}>Width not saved</span>
+                    <button className="text-button" onClick={state.widths.retry}>
+                      Retry
+                    </button>
+                  </>
+                ) : state.widths.saved ? (
+                  "Widths saved"
+                ) : null}
+              </div>
               <button className="text-button" disabled={!schema || inspecting !== undefined} onClick={() => setDesigner(true)}>
                 <Settings2 size={14} />
                 Edit structure
@@ -186,6 +212,7 @@ export function Workspace({
                 onView={state.selectView}
                 onChange={state.changeConfig}
                 onSaved={state.saveView}
+                onResize={state.resizeColumn}
                 onDesigner={() => {
                   if (inspecting === undefined) {
                     setDesigner(true);
@@ -244,7 +271,15 @@ export function Workspace({
                     setNotice("Close the current record first.");
                   }
                 }}
-                onSort={sort}
+                groups={page.groups}
+                onFieldAction={(field, action) => void fields.action(field, action)}
+                onAddField={fields.add}
+                editingBlocked={inspecting !== undefined}
+                canResize={!!state.viewId}
+                onResize={state.resizeColumn}
+                onSaved={state.replaceRecord}
+                onChanged={changed}
+                onNotice={setNotice}
               />
             )}
             {schema && inspecting !== undefined && (
@@ -304,10 +339,36 @@ export function Workspace({
         <footer className="workspace-bottom">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
           <span>
-            FormSoftware <span className="bottom-slash">/</span> 0.2
+            FormSoftware <span className="bottom-slash">/</span> 0.3
           </span>
         </footer>
       </div>
+      {schema && fields.dialog && (
+        <FieldDialog
+          formId={formId}
+          forms={forms}
+          state={fields.dialog}
+          onClose={() => fields.setDialog(undefined)}
+          onSaved={(field) => fields.placed(field, fields.dialog?.anchor, fields.dialog?.before)}
+        />
+      )}
+      {schema && fields.filterField && (
+        <Dialog title={`Filter by ${fields.filterField.name}.`} eyebrow="FILTER RECORDS" onClose={() => fields.setFilterField(undefined)}>
+          <FilterEditor
+            fields={schema.fields.filter((f) => !f.archived_at)}
+            filters={
+              config.filters.some((f) => f.field_id === fields.filterField?.id)
+                ? config.filters
+                : [...config.filters, { field_id: fields.filterField.id, op: "empty", value: null }]
+            }
+            catalogs={catalogs}
+            onChange={(filters) => {
+              state.changeConfig({ ...config, filters });
+              fields.setFilterField(undefined);
+            }}
+          />
+        </Dialog>
+      )}
       {schema && designer && (
         <SchemaDesigner
           schema={schema}
@@ -337,7 +398,9 @@ export function Workspace({
             {[
               ["Find a record", "/"],
               ["Create a record", "N"],
-              ["Save the open record", "⌘ / Ctrl + Enter"],
+              ["Save the open record / note cell", "⌘ / Ctrl + Enter"],
+              ["Save cell / edit next cell", "Enter / Tab"],
+              ["Record actions", "Shift + F10"],
               ["Close a panel", "Esc"],
               ["Show this guide", "?"],
             ].map(([label, shortcut]) => (
@@ -347,7 +410,9 @@ export function Workspace({
               </div>
             ))}
           </div>
-          <p className="shortcut-note">Tab moves between controls. Enter opens the focused record.</p>
+          <p className="shortcut-note">
+            Click or press Enter on a cell to edit it. Escape cancels the cell edit. Right-click a row for its editor and record actions.
+          </p>
         </Dialog>
       )}
       {notice && (

@@ -323,6 +323,119 @@ async fn authenticated_record_workflow(pool: PgPool) {
         )
         .await;
     assert_eq!(result.created, 1);
+    // Relative insertion is persisted, validated, and version checked.
+    let insert_path = format!("{path}/insert");
+    for (values, version, status) in [
+        (
+            json!({}),
+            attached.version,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (json!({name.to_string(): "stale"}), 1, StatusCode::CONFLICT),
+    ] {
+        assert_eq!(
+            api.request(
+                Method::POST,
+                &insert_path,
+                json!({"values":values,"before":true,"expected_version":version})
+            )
+            .await
+            .status(),
+            status
+        );
+    }
+    let above: Record = api.ok(Method::POST, &insert_path, json!({"values":{name.to_string():"Above"},"before":true,"expected_version":attached.version})).await;
+    let below: Record = api.ok(Method::POST, &insert_path, json!({"values":{name.to_string():"Below"},"before":false,"expected_version":attached.version})).await;
+    let order: RecordPage = api
+        .ok(
+            Method::GET,
+            &format!("/api/v1/forms/{}/records", work.form.id),
+            Value::Null,
+        )
+        .await;
+    let ids: Vec<_> = order.records.iter().map(|r| r.id).collect();
+    assert!(
+        ids.windows(3)
+            .any(|ids| ids == [above.id, attached.id, below.id])
+    );
+    // Invalid duplicate relations roll back metadata and clean up copied files.
+    let files_before = std::fs::read_dir(&storage).expect("storage").count();
+    assert_eq!(
+        api.request(
+            Method::POST,
+            &format!("{path}/duplicate"),
+            json!({"expected_version":attached.version})
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        std::fs::read_dir(&storage).expect("storage").count(),
+        files_before
+    );
+    let _: Record = api
+        .ok(
+            Method::PATCH,
+            &format!("/api/v1/records/{}", option.id),
+            json!({"expected_version":2,"values":{enabled.to_string():true}}),
+        )
+        .await;
+    let duplicate: Record = api
+        .ok(
+            Method::POST,
+            &format!("{path}/duplicate"),
+            json!({"expected_version":attached.version}),
+        )
+        .await;
+    assert_eq!(duplicate.values, attached.values);
+    assert_eq!(duplicate.attachments.len(), 1);
+    assert_ne!(duplicate.attachments[0].id, file.id);
+    let order: RecordPage = api
+        .ok(
+            Method::GET,
+            &format!("/api/v1/forms/{}/records", work.form.id),
+            Value::Null,
+        )
+        .await;
+    let ids: Vec<_> = order.records.iter().map(|r| r.id).collect();
+    assert!(
+        ids.windows(4)
+            .any(|ids| ids == [above.id, attached.id, duplicate.id, below.id])
+    );
+    let duplicate_file = duplicate.attachments[0].id;
+    let bytes = api
+        .client
+        .get(format!("{base}/api/v1/attachments/{duplicate_file}"))
+        .bearer_auth(&api.token)
+        .send()
+        .await
+        .expect("copied file")
+        .bytes()
+        .await
+        .expect("copied bytes");
+    assert_eq!(bytes, "integration attachment");
+    let _: Record = api
+        .ok(
+            Method::DELETE,
+            &format!("/api/v1/attachments/{duplicate_file}"),
+            json!({"expected_version":duplicate.version}),
+        )
+        .await;
+    assert!(
+        storage.join(file.id.to_string()).exists(),
+        "Removing a duplicate attachment preserves the source file"
+    );
+    assert_eq!(
+        api.request(
+            Method::POST,
+            &format!("{path}/duplicate"),
+            json!({"expected_version":1})
+        )
+        .await
+        .status(),
+        StatusCode::CONFLICT
+    );
     // A second workspace must not read, mutate, or reference the first workspace's resources.
     let other_user = Uuid::new_v4();
     let other_workspace = Uuid::new_v4();
@@ -383,6 +496,21 @@ async fn authenticated_record_workflow(pool: PgPool) {
             .status(),
         StatusCode::NOT_FOUND
     );
+    for (suffix, body) in [
+        (
+            "insert",
+            json!({"values":{name.to_string():"intruder"},"before":true,"expected_version":attached.version}),
+        ),
+        ("duplicate", json!({"expected_version":attached.version})),
+    ] {
+        assert_eq!(
+            other
+                .request(Method::POST, &format!("{path}/{suffix}"), body)
+                .await
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+    }
     let other_form = other.form("other_records", "standard").await;
     assert_eq!(other.request(Method::POST,&format!("/api/v1/forms/{}/fields",other_form.form.id),json!({"key":"forbidden","name":"Forbidden","type":"relation","config":{"target_form_id":options.form.id,"cardinality":"one","presentation":"select"}})).await.status(),StatusCode::UNPROCESSABLE_ENTITY);
     // Cookie writes require an exact Origin; bearer clients work without cookie CSRF rules.
@@ -396,5 +524,418 @@ async fn authenticated_record_workflow(pool: PgPool) {
         .await
         .expect("CSRF request");
     assert_eq!(cookie_response.status(), StatusCode::FORBIDDEN);
+    // Column metadata, global grouping before pagination, and typed/relation sorts.
+    let described: Field = api.ok(Method::POST, &format!("/api/v1/forms/{}/fields", work.form.id), json!({"key":"column_notes","name":"Column notes","description":"Minutes spent, excluding breaks.","type":"long_text","position":0})).await;
+    assert_eq!(described.position, 0);
+    assert_eq!(described.description, "Minutes spent, excluding breaks.");
+    assert_eq!(
+        api.request(
+            Method::PATCH,
+            &format!("/api/v1/fields/{}", described.id),
+            json!({"description":"x".repeat(4001)})
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let grouped: RecordPage = api
+        .ok(
+            Method::GET,
+            &format!(
+                "/api/v1/forms/{}/records?group_by={}&limit=1",
+                work.form.id, relation.id
+            ),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(grouped.records.len(), 1);
+    assert_eq!(grouped.groups.len(), 1);
+    assert_eq!(grouped.groups[0].value, json!([]));
+    assert_eq!(
+        grouped.groups[0].count, 3,
+        "Group counts cover all matching rows, not just the page"
+    );
+    let grouped: RecordPage = api
+        .ok(
+            Method::GET,
+            &format!(
+                "/api/v1/forms/{}/records?group_by={}",
+                work.form.id, relation.id
+            ),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        grouped.groups.iter().map(|g| g.count).sum::<i64>(),
+        grouped.total
+    );
+    let sorted: RecordPage = api
+        .ok(
+            Method::GET,
+            &format!(
+                "/api/v1/forms/{}/records?sort={}",
+                work.form.id, relation.id
+            ),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        sorted.records[0].values.get(&relation.id),
+        Some(&json!([option.id]))
+    );
+    let decimal = api
+        .field(work.form.id, "column_decimal", "decimal", json!({}))
+        .await;
+    for (id, value) in [(record.id, "2"), (above.id, "10"), (below.id, "1")] {
+        let current: Record = api
+            .ok(Method::GET, &format!("/api/v1/records/{id}"), Value::Null)
+            .await;
+        let _: Record = api
+            .ok(
+                Method::PATCH,
+                &format!("/api/v1/records/{id}"),
+                json!({"expected_version":current.version,"values":{decimal.id.to_string():value}}),
+            )
+            .await;
+    }
+    let sorted: RecordPage = api
+        .ok(
+            Method::GET,
+            &format!("/api/v1/forms/{}/records?sort={}", work.form.id, decimal.id),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        sorted
+            .records
+            .iter()
+            .take(3)
+            .map(|r| r.id)
+            .collect::<Vec<_>>(),
+        vec![below.id, record.id, above.id]
+    );
+    let multi = api
+        .field(
+            work.form.id,
+            "column_links",
+            "relation",
+            json!({"target_form_id":options.form.id,"cardinality":"many","presentation":"select"}),
+        )
+        .await;
+    let alpha = api
+        .create(
+            options.form.id,
+            json!({options.fields[0].id.to_string():"Alpha",enabled.to_string():true}),
+        )
+        .await;
+    for (id, links) in [
+        (record.id, vec![alpha.id, option.id]),
+        (above.id, vec![option.id, alpha.id]),
+    ] {
+        let current: Record = api
+            .ok(Method::GET, &format!("/api/v1/records/{id}"), Value::Null)
+            .await;
+        let _: Record = api
+            .ok(
+                Method::PATCH,
+                &format!("/api/v1/records/{id}"),
+                json!({"expected_version":current.version,"values":{multi.id.to_string():links}}),
+            )
+            .await;
+    }
+    let filter = serde_json::to_string(&json!([{"field_id":multi.id,"op":"eq","value":alpha.id}]))
+        .expect("group filter");
+    let grouped: RecordPage = api
+        .client
+        .get(format!(
+            "{}/api/v1/forms/{}/records",
+            api.base, work.form.id
+        ))
+        .bearer_auth(&api.token)
+        .query(&[
+            ("group_by", multi.id.to_string()),
+            ("limit", "1".into()),
+            ("filter", filter),
+        ])
+        .send()
+        .await
+        .expect("multi-link group")
+        .json()
+        .await
+        .expect("group contract");
+    assert_eq!(grouped.total, 2);
+    assert_eq!(grouped.groups.len(), 1);
+    assert_eq!(
+        grouped.groups[0].count, 2,
+        "The same set of links groups together regardless of selection order"
+    );
+    let grouped_desc: RecordPage = api
+        .ok(
+            Method::GET,
+            &format!(
+                "/api/v1/forms/{}/records?group_by={}&sort={}&descending=true&limit=1",
+                work.form.id, relation.id, relation.id
+            ),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        grouped_desc.groups[0].value,
+        json!([option.id]),
+        "Sorting the grouping field also reverses group order"
+    );
+    // A field copy has a new stable ID and independently copied canonical data.
+    let copied: Field = api
+        .ok(
+            Method::POST,
+            &format!("/api/v1/fields/{}/duplicate", duration.id),
+            Value::Null,
+        )
+        .await;
+    let schema: FormSchema = api
+        .ok(
+            Method::GET,
+            &format!("/api/v1/forms/{}/schema", work.form.id),
+            Value::Null,
+        )
+        .await;
+    let old = schema
+        .fields
+        .iter()
+        .position(|f| f.id == duration.id)
+        .expect("source column");
+    assert_eq!(schema.fields[old + 1].id, copied.id);
+    let current: Record = api.ok(Method::GET, &path, Value::Null).await;
+    assert_eq!(current.values[&copied.id], current.values[&duration.id]);
+    let copied_relation: Field = api
+        .ok(
+            Method::POST,
+            &format!("/api/v1/fields/{}/duplicate", relation.id),
+            Value::Null,
+        )
+        .await;
+    let current: Record = api.ok(Method::GET, &path, Value::Null).await;
+    assert_eq!(current.values[&copied_relation.id], json!([option.id]));
+    let copied_files: Field = api
+        .ok(
+            Method::POST,
+            &format!("/api/v1/fields/{}/duplicate", attachment.id),
+            Value::Null,
+        )
+        .await;
+    let current: Record = api.ok(Method::GET, &path, Value::Null).await;
+    let copied_file = current
+        .attachments
+        .iter()
+        .find(|a| a.field_id == copied_files.id)
+        .expect("copied file field");
+    assert_ne!(copied_file.id, file.id);
+    let bytes = api
+        .client
+        .get(format!(
+            "{}/api/v1/attachments/{}",
+            api.base, copied_file.id
+        ))
+        .bearer_auth(&api.token)
+        .send()
+        .await
+        .expect("copied column file")
+        .bytes()
+        .await
+        .expect("copied content");
+    assert_eq!(bytes, "integration attachment");
+    assert!(storage.join(file.id.to_string()).exists());
+    assert_eq!(
+        other
+            .request(
+                Method::POST,
+                &format!("/api/v1/fields/{}/duplicate", duration.id),
+                Value::Null
+            )
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    // Saved view changes survive reload; deleting a field removes dangling configuration.
+    let view: View = api.ok(Method::POST,&format!("/api/v1/forms/{}/views",work.form.id),json!({"name":"Column workflow","config":{"columns":[{"field_id":copied.id,"width":156,"hidden":false}],"filters":[{"field_id":copied.id,"op":"empty","value":null}],"sort":{"field_id":copied.id,"descending":false},"group_by":copied.id,"freeze_first":false}})).await;
+    assert_eq!(view.config.group_by, Some(copied.id));
+    assert!(!view.config.freeze_first);
+    let _: Field = api
+        .ok(
+            Method::PATCH,
+            &format!("/api/v1/fields/{}", copied.id),
+            json!({"archived":true}),
+        )
+        .await;
+    let views: Vec<View> = api
+        .ok(
+            Method::GET,
+            &format!("/api/v1/forms/{}/views", work.form.id),
+            Value::Null,
+        )
+        .await;
+    let view = views
+        .iter()
+        .find(|v| v.name == "Column workflow")
+        .expect("saved view");
+    assert!(
+        view.config.columns.is_empty()
+            && view.config.filters.is_empty()
+            && view.config.sort.is_none()
+            && view.config.group_by.is_none()
+    );
+    // Width-only writes preserve implicit order, visibility, and unrelated view preferences.
+    let default = views.iter().find(|v| v.is_default).expect("default view");
+    let width_path = format!("/api/v1/views/{}/columns/{}/width", default.id, duration.id);
+    let resized: View = api
+        .ok(Method::PATCH, &width_path, json!({"width":272}))
+        .await;
+    let schema: FormSchema = api
+        .ok(
+            Method::GET,
+            &format!("/api/v1/forms/{}/schema", work.form.id),
+            Value::Null,
+        )
+        .await;
+    let active: Vec<_> = schema
+        .fields
+        .iter()
+        .filter(|f| f.archived_at.is_none())
+        .collect();
+    assert_eq!(
+        resized
+            .config
+            .columns
+            .iter()
+            .map(|c| c.field_id)
+            .collect::<Vec<_>>(),
+        active.iter().map(|f| f.id).collect::<Vec<_>>()
+    );
+    assert!(
+        resized
+            .config
+            .columns
+            .iter()
+            .enumerate()
+            .all(|(i, c)| c.hidden == (i >= 6))
+    );
+    assert_eq!(
+        resized
+            .config
+            .columns
+            .iter()
+            .find(|c| c.field_id == duration.id)
+            .expect("resized column")
+            .width,
+        272
+    );
+    assert_eq!(
+        resized
+            .config
+            .columns
+            .iter()
+            .find(|c| c.field_id == name)
+            .expect("primary width")
+            .width,
+        350
+    );
+    for width in [99, 801] {
+        assert_eq!(
+            api.request(Method::PATCH, &width_path, json!({"width":width}))
+                .await
+                .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    assert_eq!(
+        other
+            .request(Method::PATCH, &width_path, json!({"width":300}))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        api.request(
+            Method::PATCH,
+            &format!(
+                "/api/v1/views/{}/columns/{}/width",
+                default.id, projects.fields[0].id
+            ),
+            json!({"width":300})
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        api.request(
+            Method::PATCH,
+            &format!("/api/v1/views/{}/columns/{}/width", default.id, copied.id),
+            json!({"width":300})
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let custom: View = api.ok(Method::POST,&format!("/api/v1/forms/{}/views",work.form.id),json!({"name":"Width isolation","config":{"columns":[{"field_id":relation.id,"width":180,"hidden":true}],"filters":[{"field_id":duration.id,"op":"gte","value":20}],"sort":{"field_id":duration.id,"descending":true},"group_by":relation.id,"freeze_first":false}})).await;
+    let path_one = format!("/api/v1/views/{}/columns/{}/width", custom.id, name);
+    let path_two = format!("/api/v1/views/{}/columns/{}/width", custom.id, duration.id);
+    let (one, two) = tokio::join!(
+        api.request(Method::PATCH, &path_one, json!({"width":310})),
+        api.request(Method::PATCH, &path_two, json!({"width":240}))
+    );
+    assert!(one.status().is_success() && two.status().is_success());
+    let loaded: Vec<View> = api
+        .ok(
+            Method::GET,
+            &format!("/api/v1/forms/{}/views", work.form.id),
+            Value::Null,
+        )
+        .await;
+    let loaded = loaded
+        .iter()
+        .find(|v| v.id == custom.id)
+        .expect("saved widths");
+    assert_eq!(loaded.config.columns[0].field_id, relation.id);
+    assert!(loaded.config.columns[0].hidden);
+    assert_eq!(loaded.config.columns[0].width, 180);
+    assert_eq!(
+        loaded
+            .config
+            .columns
+            .iter()
+            .find(|c| c.field_id == name)
+            .expect("name width")
+            .width,
+        310
+    );
+    assert_eq!(
+        loaded
+            .config
+            .columns
+            .iter()
+            .find(|c| c.field_id == duration.id)
+            .expect("duration width")
+            .width,
+        240
+    );
+    assert_eq!(
+        serde_json::to_value(&loaded.config.filters).expect("filters"),
+        serde_json::to_value(&custom.config.filters).expect("filters")
+    );
+    assert_eq!(
+        loaded
+            .config
+            .sort
+            .as_ref()
+            .map(|s| (s.field_id, s.descending)),
+        custom
+            .config
+            .sort
+            .as_ref()
+            .map(|s| (s.field_id, s.descending))
+    );
+    assert_eq!(loaded.config.group_by, custom.config.group_by);
+    assert!(!loaded.config.freeze_first);
     let _ = std::fs::remove_dir_all(storage);
 }

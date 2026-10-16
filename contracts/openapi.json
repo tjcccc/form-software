@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "paths": {
     "/api/v1/attachments/{attachment_id}": {
@@ -181,6 +181,45 @@
         },
         "responses": {
           "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Field"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/fields/{field_id}/duplicate": {
+      "post": {
+        "tags": [
+          "crate::attachments"
+        ],
+        "operationId": "duplicate_field",
+        "parameters": [
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -401,6 +440,15 @@
           },
           {
             "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "group_by",
             "in": "query",
             "required": false,
             "schema": {
@@ -933,6 +981,202 @@
         ]
       }
     },
+    "/api/v1/records/{record_id}/duplicate": {
+      "post": {
+        "tags": [
+          "crate::attachments"
+        ],
+        "operationId": "duplicate",
+        "parameters": [
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionCheck"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Record"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/records/{record_id}/insert": {
+      "post": {
+        "tags": [
+          "crate::routes"
+        ],
+        "operationId": "insert_record",
+        "parameters": [
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InsertRecord"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Record"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/views/{view_id}/columns/{field_id}/width": {
+      "patch": {
+        "tags": [
+          "crate::routes"
+        ],
+        "operationId": "update_column_width",
+        "parameters": [
+          {
+            "name": "view_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateColumnWidth"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/View"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/workspaces/current": {
       "get": {
         "tags": [
@@ -1075,11 +1319,21 @@
           "config": {
             "$ref": "#/components/schemas/FieldConfig"
           },
+          "description": {
+            "type": "string"
+          },
           "key": {
             "type": "string"
           },
           "name": {
             "type": "string"
+          },
+          "position": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
           },
           "required": {
             "type": "boolean"
@@ -1153,6 +1407,9 @@
           },
           "config": {
             "$ref": "#/components/schemas/FieldConfig"
+          },
+          "description": {
+            "type": "string"
           },
           "form_id": {
             "type": "string",
@@ -1457,6 +1714,32 @@
           }
         }
       },
+      "InsertRecord": {
+        "type": "object",
+        "description": "Create a validated record next to an existing record in manual table order.",
+        "required": [
+          "values",
+          "before",
+          "expected_version"
+        ],
+        "properties": {
+          "before": {
+            "type": "boolean"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "Login": {
         "type": "object",
         "required": [
@@ -1552,6 +1835,20 @@
           }
         }
       },
+      "RecordGroup": {
+        "type": "object",
+        "required": [
+          "value",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "value": {}
+        }
+      },
       "RecordPage": {
         "type": "object",
         "required": [
@@ -1559,6 +1856,12 @@
           "total"
         ],
         "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordGroup"
+            }
+          },
           "next_cursor": {
             "type": [
               "integer",
@@ -1626,12 +1929,32 @@
           }
         }
       },
+      "UpdateColumnWidth": {
+        "type": "object",
+        "required": [
+          "width"
+        ],
+        "properties": {
+          "width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "UpdateField": {
         "type": "object",
         "properties": {
           "archived": {
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -1778,6 +2101,16 @@
             "items": {
               "$ref": "#/components/schemas/Filter"
             }
+          },
+          "freeze_first": {
+            "type": "boolean"
+          },
+          "group_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
           },
           "sort": {
             "oneOf": [

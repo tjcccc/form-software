@@ -24,6 +24,12 @@ pub fn validate_key(key: &str) -> Result<(), String> {
 }
 pub fn validate_field(input: &CreateField) -> Result<(), String> {
     validate_name(&input.name)?;
+    if input.description.len() > 4000 {
+        return Err("Description is too long.".into());
+    }
+    if input.position.is_some_and(|p| !(0..=10_000).contains(&p)) {
+        return Err("Invalid field position.".into());
+    }
     validate_key(&input.key)?;
     if input.field_type == FieldType::Relation {
         if input.config.target_form_id.is_none()
@@ -171,6 +177,7 @@ mod tests {
     use serde_json::json;
     fn field(kind: FieldType) -> Field {
         Field {
+            description: String::new(),
             id: uuid::Uuid::new_v4(),
             form_id: uuid::Uuid::new_v4(),
             key: "value".into(),

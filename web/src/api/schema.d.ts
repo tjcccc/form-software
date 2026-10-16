@@ -68,6 +68,22 @@ export interface paths {
         patch: operations["update_field"];
         trace?: never;
     };
+    "/api/v1/fields/{field_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["duplicate_field"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/forms": {
         parameters: {
             query?: never;
@@ -228,6 +244,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/records/{record_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["duplicate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/records/{record_id}/insert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["insert_record"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/views/{view_id}/columns/{field_id}/width": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_column_width"];
+        trace?: never;
+    };
     "/api/v1/workspaces/current": {
         parameters: {
             query?: never;
@@ -278,8 +342,11 @@ export interface components {
         };
         CreateField: {
             config?: components["schemas"]["FieldConfig"];
+            description?: string;
             key: string;
             name: string;
+            /** Format: int32 */
+            position?: number | null;
             required?: boolean;
             type: components["schemas"]["FieldType"];
         };
@@ -299,6 +366,7 @@ export interface components {
             /** Format: date-time */
             archived_at?: string | null;
             config: components["schemas"]["FieldConfig"];
+            description?: string;
             /** Format: uuid */
             form_id: string;
             /** Format: uuid */
@@ -378,6 +446,15 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description Create a validated record next to an existing record in manual table order. */
+        InsertRecord: {
+            before: boolean;
+            /** Format: int32 */
+            expected_version: number;
+            values: {
+                [key: string]: unknown;
+            };
+        };
         Login: {
             password: string;
             username: string;
@@ -408,7 +485,13 @@ export interface components {
             /** Format: int32 */
             version: number;
         };
+        RecordGroup: {
+            /** Format: int64 */
+            count: number;
+            value: unknown;
+        };
         RecordPage: {
+            groups?: components["schemas"]["RecordGroup"][];
             /** Format: int32 */
             next_cursor?: number | null;
             records: components["schemas"]["Record"][];
@@ -428,8 +511,13 @@ export interface components {
             /** Format: uuid */
             field_id: string;
         };
+        UpdateColumnWidth: {
+            /** Format: int32 */
+            width: number;
+        };
         UpdateField: {
             archived?: boolean | null;
+            description?: string | null;
             name?: string | null;
             /** Format: int32 */
             position?: number | null;
@@ -468,6 +556,9 @@ export interface components {
         ViewConfig: {
             columns: components["schemas"]["ColumnLayout"][];
             filters: components["schemas"]["Filter"][];
+            freeze_first?: boolean;
+            /** Format: uuid */
+            group_by?: string | null;
             sort?: null | components["schemas"]["Sort"];
         };
         Workspace: {
@@ -604,6 +695,27 @@ export interface operations {
             };
         };
     };
+    duplicate_field: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Field"];
+                };
+            };
+        };
+    };
     forms: {
         parameters: {
             query?: never;
@@ -703,6 +815,7 @@ export interface operations {
                 /** @description JSON array of Filter predicates, combined with AND */
                 filter?: string;
                 sort?: string;
+                group_by?: string;
                 descending?: boolean;
                 cursor?: number;
                 limit?: number;
@@ -980,6 +1093,114 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Record"];
+                };
+            };
+        };
+    };
+    duplicate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionCheck"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Record"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    insert_record: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsertRecord"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Record"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    update_column_width: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                view_id: string;
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateColumnWidth"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["View"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };

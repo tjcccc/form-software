@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Search, X } from "lucide-react";
+import { initialValues } from "./values";
+import { Check, Plus, ChevronDown, Search, X } from "lucide-react";
 import { api, aborted, message } from "../../api/client";
 import type { DataRecord, Field, RelationCatalog } from "../../api/types";
 import { relationIds, titleOf } from "./values";
@@ -8,16 +9,22 @@ export function RelationPicker({
   value,
   catalog,
   onChange,
+  autoOpen = false,
+  onBusyChange,
 }: {
+  autoOpen?: boolean;
+  onBusyChange?: (busy: boolean) => void;
   field: Field;
   value: unknown;
   catalog?: RelationCatalog;
   onChange: (value: string[]) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<DataRecord[]>([]);
   const [chosen, setChosen] = useState<DataRecord[]>([]);
+  const [resultQuery, setResultQuery] = useState<string>();
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const selected = relationIds(value);
   const target = field.config.target_form_id;
@@ -30,6 +37,7 @@ export function RelationPicker({
       api
         .records(target, new URLSearchParams({ q: query, limit: "100" }), controller.signal)
         .then((page) => {
+          setResultQuery(query);
           setOptions(page.records);
           setError("");
         })
@@ -57,6 +65,26 @@ export function RelationPicker({
     );
     if (field.config.cardinality === "one") {
       setOpen(false);
+    }
+  }
+  async function quickAdd() {
+    if (!target || creating || resultQuery !== query || !query.trim()) return;
+    setCreating(true);
+    onBusyChange?.(true);
+    setError("");
+    try {
+      const schema = catalog?.schema ?? (await api.schema(target));
+      const primary = schema.fields.find((f) => f.key === "name" && !f.archived_at);
+      if (!primary) throw new Error("Open the linked form to add this record.");
+      const record = await api.createRecord(target, { ...initialValues(schema), [primary.id]: query.trim() });
+      choose(record);
+      setOptions((old) => [record, ...old]);
+      setQuery("");
+    } catch (e) {
+      setError(`${message(e)} If other fields are required, add the record in the linked form.`);
+    } finally {
+      setCreating(false);
+      onBusyChange?.(false);
     }
   }
   return (
@@ -90,6 +118,8 @@ export function RelationPicker({
               placeholder="Search related records…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              maxLength={500}
+              disabled={creating}
               aria-label={`Search ${field.name}`}
             />
           </div>
@@ -107,9 +137,29 @@ export function RelationPicker({
                 </button>
               );
             })}
-            {!options.length && <p className="picker-empty">No matching records.</p>}
+            {resultQuery === query &&
+              !options.length &&
+              !error &&
+              (query.trim() ? (
+                <button type="button" className="picker-option quick-add-option" disabled={creating} onClick={() => void quickAdd()}>
+                  <Plus size={14} />
+                  <span>
+                    {creating ? (
+                      "Adding…"
+                    ) : (
+                      <>
+                        Add {catalog?.schema.form.kind === "options" ? "option" : "record"}: <strong>{query.trim()}</strong>
+                      </>
+                    )}
+                  </span>
+                </button>
+              ) : (
+                <p className="picker-empty">No matching records.</p>
+              ))}
           </div>
-          <p className="picker-hint">Searches existing records · up to 100 results</p>
+          <p className="picker-hint">
+            {creating ? "Creates and selects a linked record" : "Search records · create a new one when no match is found"}
+          </p>
         </div>
       )}
     </div>

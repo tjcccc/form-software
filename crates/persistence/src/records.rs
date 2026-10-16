@@ -29,9 +29,23 @@ impl Store {
         if offset > 1_000_000 {
             return Err(invalid("Cursor exceeds the supported range."));
         }
-        let mut qb = QueryBuilder::<Postgres>::new(
-            "WITH matching AS (SELECT r.* FROM records r WHERE r.form_id=",
-        );
+        let grouped = query
+            .group_by
+            .map(|id| {
+                schema
+                    .fields
+                    .iter()
+                    .find(|f| f.id == id && f.archived_at.is_none())
+                    .ok_or(invalid("Group field is unavailable."))
+            })
+            .transpose()?;
+        let mut qb = QueryBuilder::<Postgres>::new("WITH matching AS (SELECT r.*, ");
+        if let Some(field) = grouped {
+            push_group(&mut qb, field);
+        } else {
+            qb.push("'null'::jsonb");
+        }
+        qb.push(" AS group_value FROM records r WHERE r.form_id=");
         qb.push_bind(form_id).push(" AND r.deleted_at IS NULL");
         if let Some(search) = query.q.filter(|s| !s.trim().is_empty()) {
             qb.push(" AND EXISTS(SELECT 1 FROM jsonb_each_text(r.data) d WHERE position(")
@@ -46,21 +60,23 @@ impl Store {
                 .ok_or(invalid("Filter field is unavailable."))?;
             append_filter(&mut qb, field, filter)?;
         }
-        qb.push("), page AS (SELECT r.* FROM matching r");
+        qb.push("), page AS (SELECT r.*, row_number() OVER (");
+        qb.push(" ORDER BY ");
+        if let Some(field) = grouped {
+            push_sort(&mut qb, field);
+            qb.push(if query.sort == Some(field.id) && query.descending {
+                " DESC NULLS LAST, r.group_value, "
+            } else {
+                " ASC NULLS FIRST, r.group_value, "
+            });
+        }
         if let Some(sort) = query.sort {
             let field = schema
                 .fields
                 .iter()
                 .find(|f| f.id == sort && f.archived_at.is_none())
                 .ok_or(invalid("Sort field is unavailable."))?;
-            if matches!(
-                field.field_type,
-                FieldType::Relation | FieldType::Attachment
-            ) {
-                return Err(invalid("Sort a scalar field instead."));
-            }
-            qb.push(" ORDER BY ");
-            push_scalar(&mut qb, field);
+            push_sort(&mut qb, field);
             qb.push(if query.descending {
                 " DESC NULLS LAST"
             } else {
@@ -68,20 +84,27 @@ impl Store {
             })
             .push(", r.id");
         } else {
-            qb.push(" ORDER BY r.created_at DESC, r.id");
+            qb.push("r.position, r.id");
         }
-        qb.push(" LIMIT ")
+        qb.push(") AS ordinal FROM matching r ORDER BY ordinal LIMIT ")
             .push_bind(i64::from(limit))
             .push(" OFFSET ")
             .push_bind(i64::from(offset));
         qb.push(") SELECT (SELECT count(*) FROM matching) AS total, coalesce(jsonb_agg(")
             .push(RECORD_VALUE)
-            .push("),'[]'::jsonb) AS value FROM page r");
+            .push(" ORDER BY r.ordinal),'[]'::jsonb) AS value");
+        if grouped.is_some() {
+            qb.push(", (SELECT coalesce(jsonb_agg(jsonb_build_object('value',g.group_value,'count',g.count)),'[]'::jsonb) FROM (SELECT group_value,count(*) AS count FROM matching WHERE group_value IN (SELECT group_value FROM page) GROUP BY group_value) g) AS groups");
+        } else {
+            qb.push(", '[]'::jsonb AS groups");
+        }
+        qb.push(" FROM page r");
         let row = qb.build().fetch_one(&self.pool).await?;
         let total: i64 = row.try_get("total")?;
         let records: Vec<Record> = decode(&row, "value")?;
         let next = offset + records.len() as u32;
         Ok(RecordPage {
+            groups: decode(&row, "groups")?,
             records,
             total,
             next_cursor: (i64::from(next) < total).then_some(next),
@@ -114,7 +137,7 @@ impl Store {
             issues(validate_values(&fields, &input.values, &[]))?;
             let id = Uuid::new_v4();
             let data = scalar_values(&fields, &input.values);
-            sqlx::query("INSERT INTO records(id,form_id,data,created_by,updated_by) VALUES ($1,$2,$3,$4,$4)")
+            sqlx::query("INSERT INTO records(id,form_id,data,created_by,updated_by,position) VALUES ($1,$2,$3,$4,$4,(SELECT coalesce(min(position),0)-1 FROM records WHERE form_id=$2))")
                 .bind(id).bind(form_id).bind(encode(data)?).bind(actor.user_id).execute(&mut *tx).await?;
             write_relations(&mut tx, actor, id, &fields, &input.values, &Values::new()).await?;
             ids.push(id);
@@ -125,6 +148,115 @@ impl Store {
             records.push(self.record(actor, id).await?);
         }
         Ok(records)
+    }
+    pub async fn insert_record(
+        &self,
+        actor: Actor,
+        anchor_id: Uuid,
+        input: InsertRecord,
+    ) -> Result<Record> {
+        self.insert_relative(actor, anchor_id, input, None).await
+    }
+    /// Files are copied by the server before this atomic metadata operation.
+    pub async fn duplicate_record(
+        &self,
+        actor: Actor,
+        source_id: Uuid,
+        expected_version: i32,
+        copies: Vec<(Uuid, Uuid)>,
+    ) -> Result<Record> {
+        self.insert_relative(
+            actor,
+            source_id,
+            InsertRecord {
+                values: Values::new(),
+                before: false,
+                expected_version,
+            },
+            Some(copies),
+        )
+        .await
+    }
+    async fn insert_relative(
+        &self,
+        actor: Actor,
+        anchor_id: Uuid,
+        input: InsertRecord,
+        copies: Option<Vec<(Uuid, Uuid)>>,
+    ) -> Result<Record> {
+        let anchor = self.record(actor, anchor_id).await?;
+        let mut tx = self.pool.begin().await?;
+        Self::lock_form(&mut tx, actor, anchor.form_id).await?;
+        let anchor = self.record(actor, anchor_id).await?;
+        if anchor.version != input.expected_version {
+            return Err(StoreError::Conflict(Box::new(anchor)));
+        }
+        let fields = self.fields(anchor.form_id).await?;
+        let values = if copies.is_some() {
+            anchor
+                .values
+                .iter()
+                .filter(|(id, _)| {
+                    fields.iter().any(|f| {
+                        f.id == **id
+                            && f.archived_at.is_none()
+                            && f.field_type != FieldType::Attachment
+                    })
+                })
+                .map(|(id, value)| (*id, value.clone()))
+                .collect()
+        } else {
+            input.values
+        };
+        issues(validate_write_keys(&fields, &values))?;
+        issues(validate_values(&fields, &values, &[]))?;
+        let position: i64 = sqlx::query_scalar("SELECT position FROM records WHERE id=$1")
+            .bind(anchor_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        let position = position + i64::from(!input.before);
+        sqlx::query("UPDATE records SET position=position+1 WHERE form_id=$1 AND position >= $2")
+            .bind(anchor.form_id)
+            .bind(position)
+            .execute(&mut *tx)
+            .await?;
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO records(id,form_id,data,created_by,updated_by,position) VALUES($1,$2,$3,$4,$4,$5)")
+            .bind(id).bind(anchor.form_id).bind(encode(scalar_values(&fields, &values))?).bind(actor.user_id).bind(position).execute(&mut *tx).await?;
+        write_relations(&mut tx, actor, id, &fields, &values, &Values::new()).await?;
+        if let Some(copies) = copies {
+            let active: Vec<_> = anchor
+                .attachments
+                .iter()
+                .filter(|a| {
+                    fields
+                        .iter()
+                        .any(|f| f.id == a.field_id && f.archived_at.is_none())
+                })
+                .collect();
+            if active.len() != copies.len()
+                || active
+                    .iter()
+                    .any(|a| !copies.iter().any(|(old, _)| *old == a.id))
+            {
+                return Err(invalid(
+                    "Attachments changed. Reload the record and try again.",
+                ));
+            }
+            for (old, new) in copies {
+                sqlx::query("INSERT INTO attachments(id,workspace_id,record_id,field_id,filename,content_type,size_bytes,sha256,storage_key,uploaded_by) SELECT $1,workspace_id,$2,field_id,filename,content_type,size_bytes,sha256,$3,$4 FROM attachments WHERE id=$5 AND record_id=$6")
+                    .bind(new).bind(id).bind(new.to_string()).bind(actor.user_id).bind(old).bind(anchor_id).execute(&mut *tx).await?;
+            }
+        }
+        let row = sqlx::query(&format!(
+            "SELECT {RECORD_VALUE} AS value FROM records r WHERE r.id=$1"
+        ))
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let record = decode(&row, "value")?;
+        tx.commit().await?;
+        Ok(record)
     }
     pub async fn update_record(
         &self,
@@ -306,9 +438,9 @@ fn push_scalar(qb: &mut QueryBuilder<'_, Postgres>, field: &Field) {
         FieldType::DateTime => "::timestamptz",
         _ => "",
     };
-    qb.push("(r.data ->> ")
+    qb.push("nullif(r.data ->> ")
         .push_bind(field.id.to_string())
-        .push(")")
+        .push(", '')")
         .push(cast);
 }
 fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Filter) -> Result<()> {
@@ -411,4 +543,37 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
         });
     }
     Ok(())
+}
+
+fn push_group(qb: &mut QueryBuilder<'_, Postgres>, field: &Field) {
+    match field.field_type {
+        FieldType::Relation => {
+            qb.push("coalesce((SELECT jsonb_agg(target_record_id ORDER BY target_record_id) FROM record_relations WHERE source_record_id=r.id AND source_field_id=").push_bind(field.id).push("),'[]'::jsonb)");
+        }
+        FieldType::Attachment => {
+            qb.push(
+                "to_jsonb((SELECT count(*) FROM attachments WHERE record_id=r.id AND field_id=",
+            )
+            .push_bind(field.id)
+            .push("))");
+        }
+        _ => {
+            qb.push("coalesce(nullif(r.data->")
+                .push_bind(field.id.to_string())
+                .push(",'\"\"'::jsonb),'null'::jsonb)");
+        }
+    }
+}
+fn push_sort(qb: &mut QueryBuilder<'_, Postgres>, field: &Field) {
+    match field.field_type {
+        FieldType::Relation => {
+            qb.push("(SELECT string_agg(lower(target.data->>primary_field.id::text), ', ' ORDER BY lower(target.data->>primary_field.id::text), target.id) FROM record_relations x JOIN records target ON target.id=x.target_record_id JOIN fields primary_field ON primary_field.form_id=target.form_id AND primary_field.key='name' WHERE x.source_record_id=r.id AND x.source_field_id=").push_bind(field.id).push(")");
+        }
+        FieldType::Attachment => {
+            qb.push("(SELECT count(*) FROM attachments WHERE record_id=r.id AND field_id=")
+                .push_bind(field.id)
+                .push(")");
+        }
+        _ => push_scalar(qb, field),
+    }
 }

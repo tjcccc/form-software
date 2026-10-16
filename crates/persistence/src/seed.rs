@@ -489,6 +489,8 @@ async fn add(
             actor,
             form.form.id,
             CreateField {
+                description: String::new(),
+                position: None,
                 key: key.into(),
                 name: name.into(),
                 field_type,

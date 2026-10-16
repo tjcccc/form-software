@@ -100,6 +100,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/forms/{id}/views",
             get(routes::views).post(routes::save_view),
         )
+        .route(
+            "/views/{view_id}/columns/{field_id}/width",
+            patch(routes::update_column_width),
+        )
+        .route("/fields/{id}/duplicate", post(attachments::duplicate_field))
+        .route("/records/{id}/insert", post(routes::insert_record))
+        .route("/records/{id}/duplicate", post(attachments::duplicate))
         .route("/records/{id}/attachments", post(attachments::upload))
         .route(
             "/attachments/{id}",

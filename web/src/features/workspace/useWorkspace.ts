@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, aborted, message } from "../../api/client";
-import type { Catalogs, RelationCatalog, FormSchema, RecordPage, View, ViewConfig } from "../../api/types";
+import type { Catalogs, DataRecord, RelationCatalog, FormSchema, RecordPage, View, ViewConfig } from "../../api/types";
+import { withColumnWidth } from "./columns";
+import { useColumnWidths } from "./useColumnWidths";
 import { relationIds } from "../records/values";
-export const emptyView: ViewConfig = { columns: [], filters: [], sort: null };
+export const emptyView: ViewConfig = { columns: [], filters: [], sort: null, group_by: null, freeze_first: true };
 export function useWorkspace(formId: string) {
   const [schema, setSchema] = useState<FormSchema>();
   const [views, setViews] = useState<View[]>([]);
   const [config, setConfig] = useState<ViewConfig>(emptyView);
   const [viewId, setViewId] = useState("");
-  const [page, setPage] = useState<RecordPage>({ records: [], total: 0, next_cursor: null });
+  const [page, setPage] = useState<RecordPage>({ records: [], groups: [], total: 0, next_cursor: null });
   const [catalogs, setCatalogs] = useState<Catalogs>({});
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -16,6 +18,17 @@ export function useWorkspace(formId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const widths = useColumnWidths((view, fieldId, width) => {
+    if (!schema) return;
+    setViews((old) => old.map((v) => (v.id === view.id ? { ...v, config: withColumnWidth(schema, v.config, fieldId, width) } : v)));
+  });
+  function resizeColumn(fieldId: string, width: number) {
+    if (!schema || !viewId) return;
+    const next = Math.min(800, Math.max(100, Math.round(width)));
+    setConfig((old) => withColumnWidth(schema, old, fieldId, next));
+    widths.persist({ viewId, fieldId, width: next });
+  }
+  const { filters, sort, group_by: groupBy } = config;
   const refresh = useCallback(() => setRevision((v) => v + 1), []);
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -54,12 +67,13 @@ export function useWorkspace(formId: string) {
     if (search) {
       params.set("q", search);
     }
-    if (config.filters.length) {
-      params.set("filter", JSON.stringify(config.filters));
+    if (filters.length) {
+      params.set("filter", JSON.stringify(filters));
     }
-    if (config.sort) {
-      params.set("sort", config.sort.field_id);
-      params.set("descending", String(config.sort.descending));
+    if (groupBy) params.set("group_by", groupBy);
+    if (sort) {
+      params.set("sort", sort.field_id);
+      params.set("descending", String(sort.descending));
     }
     // Loading mirrors this external request lifecycle, including refetches.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -79,7 +93,7 @@ export function useWorkspace(formId: string) {
         }
       });
     return () => controller.abort();
-  }, [schema, formId, search, cursor, config, revision]);
+  }, [schema, formId, search, cursor, filters, sort, groupBy, revision]);
   useEffect(() => {
     if (!schema) {
       return;
@@ -145,8 +159,12 @@ export function useWorkspace(formId: string) {
     loading,
     error,
     refresh,
+    replaceRecord: (record: DataRecord) =>
+      setPage((old) => ({ ...old, records: old.records.map((r) => (r.id === record.id ? record : r)) })),
     changeConfig,
     selectView,
     saveView,
+    resizeColumn,
+    widths,
   };
 }

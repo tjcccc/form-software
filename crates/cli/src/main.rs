@@ -157,6 +157,7 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
                 let page = client.records(
                     schema.form.id,
                     &RecordQuery {
+                        group_by: None,
                         q: search.clone(),
                         filter: filter.clone(),
                         sort: *sort,

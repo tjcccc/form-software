@@ -65,7 +65,7 @@ pub async fn update_field(
 ) -> HttpResult<Json<Field>> {
     Ok(Json(s.store.update_field(a, id, input).await?))
 }
-#[utoipa::path(get,path="/api/v1/forms/{form_id}/records",params(("form_id"=Uuid,Path),("q"=Option<String>,Query),("filter"=Option<String>,Query,description="JSON array of Filter predicates, combined with AND"),("sort"=Option<Uuid>,Query),("descending"=Option<bool>,Query),("cursor"=Option<u32>,Query),("limit"=Option<u32>,Query)),responses((status=200,body=RecordPage)))]
+#[utoipa::path(get,path="/api/v1/forms/{form_id}/records",params(("form_id"=Uuid,Path),("q"=Option<String>,Query),("filter"=Option<String>,Query,description="JSON array of Filter predicates, combined with AND"),("sort"=Option<Uuid>,Query),("group_by"=Option<Uuid>,Query),("descending"=Option<bool>,Query),("cursor"=Option<u32>,Query),("limit"=Option<u32>,Query)),responses((status=200,body=RecordPage)))]
 pub async fn records(
     State(s): State<Arc<AppState>>,
     Extension(a): Extension<Actor>,
@@ -131,4 +131,31 @@ pub async fn save_view(
     ApiJson(input): ApiJson<SaveView>,
 ) -> HttpResult<Json<View>> {
     Ok(Json(s.store.save_view(a, id, input).await?))
+}
+
+#[utoipa::path(post,path="/api/v1/records/{record_id}/insert",params(("record_id"=Uuid,Path)),request_body=InsertRecord,responses((status=201,body=Record),(status=409,body=ApiError)))]
+pub async fn insert_record(
+    State(s): State<Arc<AppState>>,
+    Extension(a): Extension<Actor>,
+    Path(id): Path<Uuid>,
+    ApiJson(input): ApiJson<InsertRecord>,
+) -> HttpResult<(StatusCode, Json<Record>)> {
+    Ok((
+        StatusCode::CREATED,
+        Json(s.store.insert_record(a, id, input).await?),
+    ))
+}
+
+#[utoipa::path(patch,path="/api/v1/views/{view_id}/columns/{field_id}/width",params(("view_id"=Uuid,Path),("field_id"=Uuid,Path)),request_body=UpdateColumnWidth,responses((status=200,body=View),(status=404,body=ApiError),(status=422,body=ApiError)))]
+pub async fn update_column_width(
+    State(s): State<Arc<AppState>>,
+    Extension(a): Extension<Actor>,
+    Path((view_id, field_id)): Path<(Uuid, Uuid)>,
+    ApiJson(input): ApiJson<UpdateColumnWidth>,
+) -> HttpResult<Json<View>> {
+    Ok(Json(
+        s.store
+            .update_column_width(a, view_id, field_id, input)
+            .await?,
+    ))
 }

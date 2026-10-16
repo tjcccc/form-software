@@ -120,3 +120,88 @@ pub async fn remove(
     }
     Ok(Json(record))
 }
+
+#[utoipa::path(post,path="/api/v1/records/{record_id}/duplicate",params(("record_id"=Uuid,Path)),request_body=VersionCheck,responses((status=201,body=Record),(status=409,body=ApiError)))]
+pub async fn duplicate(
+    State(s): State<Arc<AppState>>,
+    Extension(a): Extension<Actor>,
+    Path(id): Path<Uuid>,
+    ApiJson(input): ApiJson<VersionCheck>,
+) -> HttpResult<(axum::http::StatusCode, Json<Record>)> {
+    let source = s.store.record(a, id).await?;
+    if source.version != input.expected_version {
+        return Err(form_persistence::StoreError::Conflict(Box::new(source)).into());
+    }
+    let schema = s.store.schema(a, source.form_id).await?;
+    let mut copies = Vec::new();
+    let result: HttpResult<Record> = async {
+        for attachment in source.attachments.iter().filter(|a| {
+            schema
+                .fields
+                .iter()
+                .any(|f| f.id == a.field_id && f.archived_at.is_none())
+        }) {
+            let (_, key) = s.store.attachment(a, attachment.id).await?;
+            let new = Uuid::new_v4();
+            copies.push((attachment.id, new));
+            tokio::fs::copy(
+                s.config.storage.join(key),
+                s.config.storage.join(new.to_string()),
+            )
+            .await?;
+        }
+        Ok(s.store
+            .duplicate_record(a, id, input.expected_version, copies.clone())
+            .await?)
+    }
+    .await;
+    match result {
+        Ok(record) => Ok((axum::http::StatusCode::CREATED, Json(record))),
+        Err(error) => {
+            for (_, new) in copies {
+                if let Err(cleanup) =
+                    tokio::fs::remove_file(s.config.storage.join(new.to_string())).await
+                {
+                    tracing::warn!("Duplicate cleanup failed: {cleanup}");
+                }
+            }
+            Err(error)
+        }
+    }
+}
+
+#[utoipa::path(post,path="/api/v1/fields/{field_id}/duplicate",params(("field_id"=Uuid,Path)),responses((status=201,body=Field)))]
+pub async fn duplicate_field(
+    State(s): State<Arc<AppState>>,
+    Extension(a): Extension<Actor>,
+    Path(id): Path<Uuid>,
+) -> HttpResult<(axum::http::StatusCode, Json<Field>)> {
+    let files = s.store.field_attachments(a, id).await?;
+    let mut copies = Vec::new();
+    let result: HttpResult<Field> = async {
+        for (old, key) in files {
+            let new = Uuid::new_v4();
+            copies.push((old, new));
+            tokio::fs::copy(
+                s.config.storage.join(key),
+                s.config.storage.join(new.to_string()),
+            )
+            .await?;
+        }
+        Ok(s.store.duplicate_field(a, id, copies.clone()).await?)
+    }
+    .await;
+    match result {
+        Ok(field) => Ok((axum::http::StatusCode::CREATED, Json(field))),
+        Err(error) => {
+            for (_, new) in copies {
+                if let Err(cleanup) =
+                    tokio::fs::remove_file(s.config.storage.join(new.to_string())).await
+                {
+                    tracing::warn!("Field copy cleanup failed: {cleanup}");
+                }
+            }
+            Err(error)
+        }
+    }
+}

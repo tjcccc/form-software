@@ -1,5 +1,19 @@
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Columns3, Filter, ListFilter, Plus, Save, SlidersHorizontal, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Columns3,
+  Group,
+  Filter,
+  ListFilter,
+  Plus,
+  Save,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+import { columnLayouts } from "./columns";
 import { Popover } from "../../components/Popover";
 import type { Catalogs, Field, Filter as FilterRule, FormSchema, View, ViewConfig } from "../../api/types";
 import { FieldIcon } from "../../components/Icons";
@@ -16,6 +30,7 @@ export function ViewControls({
   onSaved,
   onDesigner,
   onNotice,
+  onResize,
 }: {
   schema: FormSchema;
   views: View[];
@@ -27,6 +42,7 @@ export function ViewControls({
   onSaved: (name: string) => Promise<void>;
   onDesigner: () => void;
   onNotice: (message: string) => void;
+  onResize: (fieldId: string, width: number) => void;
 }) {
   const [viewName, setViewName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -131,14 +147,12 @@ export function ViewControls({
               })
             }
           >
-            <option value="">Recently created</option>
-            {fields
-              .filter((f) => !["relation", "attachment"].includes(f.type))
-              .map((f) => (
-                <option value={f.id} key={f.id}>
-                  {f.name}
-                </option>
-              ))}
+            <option value="">Manual row order</option>
+            {fields.map((f) => (
+              <option value={f.id} key={f.id}>
+                {f.name}
+              </option>
+            ))}
           </select>
           {config.sort && (
             <select
@@ -151,6 +165,31 @@ export function ViewControls({
             </select>
           )}
         </div>
+      </Popover>
+      <Popover
+        active={!!config.group_by}
+        label={
+          <>
+            <Group size={14} />
+            <span>Group</span>
+            {config.group_by && <span className="control-count">1</span>}
+          </>
+        }
+      >
+        <p className="popover-label">GROUP RECORDS</p>
+        <select
+          aria-label="Group field"
+          value={config.group_by ?? ""}
+          onChange={(e) => onChange({ ...config, group_by: e.target.value || null })}
+        >
+          <option value="">No grouping</option>
+          {fields.map((f) => (
+            <option value={f.id} key={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+        <p className="picker-hint">Groups cover the filtered collection. Multi-record relations group by their complete set of links.</p>
       </Popover>
       <Popover
         label={
@@ -169,7 +208,7 @@ export function ViewControls({
               return (ai === -1 ? 1000 + a.position : ai) - (bi === -1 ? 1000 + b.position : bi);
             })
             .map((field, index, ordered) => {
-              const column = config.columns.find((c) => c.field_id === field.id);
+              const column = columnLayouts(schema, config).find((c) => c.field_id === field.id);
               const hidden = column?.hidden ?? index >= 6;
               function update(patch: Partial<ViewConfig["columns"][number]>) {
                 const columns = ordered.map(
@@ -205,11 +244,22 @@ export function ViewControls({
                     className="width-input"
                     type="number"
                     aria-label={`${field.name} column width`}
-                    value={column?.width ?? (field.key === "name" ? 350 : 156)}
+                    key={`${field.id}:${column?.width}`}
+                    defaultValue={column?.width ?? 156}
                     min={100}
                     max={800}
                     step={10}
-                    onChange={(e) => update({ width: Math.min(800, Math.max(100, Number(e.target.value))) })}
+                    onBlur={(e) => {
+                      const next = Math.min(800, Math.max(100, Math.round(Number(e.currentTarget.value))));
+                      e.currentTarget.value = String(next);
+                      if (next !== column?.width) onResize(field.id, next);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                      }
+                    }}
                   />
                   <button
                     className="icon-button"
@@ -240,7 +290,7 @@ export function ViewControls({
     </div>
   );
 }
-function FilterEditor({
+export function FilterEditor({
   fields,
   filters,
   catalogs,

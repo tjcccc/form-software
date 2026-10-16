@@ -1,5 +1,6 @@
 //! PostgreSQL-backed application operations. Transactions enforce schema and record invariants.
 mod attachments;
+mod field_copy;
 mod records;
 mod schema;
 mod seed;

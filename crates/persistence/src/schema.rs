@@ -134,9 +134,29 @@ impl Store {
                 ));
             }
         }
-        let row = sqlx::query("INSERT INTO fields(id,form_id,key,name,type,required,config,position) VALUES ($1,$2,$3,$4,$5,$6,$7,(SELECT coalesce(max(position),-1)+1 FROM fields WHERE form_id=$2)) RETURNING to_jsonb(fields) AS value")
+        let position: i32 = match input.position {
+            Some(p) => {
+                sqlx::query(
+                    "UPDATE fields SET position=position+1 WHERE form_id=$1 AND position >= $2",
+                )
+                .bind(form_id)
+                .bind(p)
+                .execute(&mut *tx)
+                .await?;
+                p
+            }
+            None => {
+                sqlx::query_scalar(
+                    "SELECT coalesce(max(position),-1)+1 FROM fields WHERE form_id=$1",
+                )
+                .bind(form_id)
+                .fetch_one(&mut *tx)
+                .await?
+            }
+        };
+        let row = sqlx::query("INSERT INTO fields(id,form_id,key,name,type,required,config,position,description) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING to_jsonb(fields) AS value")
             .bind(Uuid::new_v4()).bind(form_id).bind(input.key).bind(input.name.trim()).bind(encode(input.field_type)?.as_str())
-            .bind(input.required).bind(encode(input.config)?).fetch_one(&mut *tx).await?;
+            .bind(input.required).bind(encode(input.config)?).bind(position).bind(input.description).fetch_one(&mut *tx).await?;
         let field = decode(&row, "value")?;
         tx.commit().await?;
         Ok(field)
@@ -144,6 +164,9 @@ impl Store {
     pub async fn update_field(&self, actor: Actor, id: Uuid, input: UpdateField) -> Result<Field> {
         if let Some(name) = &input.name {
             checked(validate_name(name))?;
+        }
+        if input.description.as_ref().is_some_and(|d| d.len() > 4000) {
+            return Err(invalid("Description is too long."));
         }
         if input.position.is_some_and(|p| !(0..=10_000).contains(&p)) {
             return Err(invalid("Invalid field position."));
@@ -185,9 +208,31 @@ impl Store {
                 ));
             }
         }
-        let row = sqlx::query("UPDATE fields SET name=coalesce($2,name),required=coalesce($3,required),position=coalesce($4,position),archived_at=CASE WHEN $5 THEN now() ELSE archived_at END WHERE id=$1 RETURNING to_jsonb(fields) AS value")
-            .bind(id).bind(input.name).bind(input.required).bind(input.position).bind(input.archived.unwrap_or(false)).fetch_one(&mut *tx).await?;
+        let row = sqlx::query("UPDATE fields SET name=coalesce($2,name),description=coalesce($6,description),required=coalesce($3,required),position=coalesce($4,position),archived_at=CASE WHEN $5 THEN now() ELSE archived_at END WHERE id=$1 RETURNING to_jsonb(fields) AS value")
+            .bind(id).bind(input.name).bind(input.required).bind(input.position).bind(input.archived.unwrap_or(false)).bind(input.description).fetch_one(&mut *tx).await?;
         let result = decode(&row, "value")?;
+        if input.archived == Some(true) {
+            let views = sqlx::query("SELECT id,config FROM views WHERE form_id=$1")
+                .bind(field.form_id)
+                .fetch_all(&mut *tx)
+                .await?;
+            for view in views {
+                let mut config: ViewConfig = serde_json::from_value(view.try_get("config")?)?;
+                config.columns.retain(|c| c.field_id != id);
+                config.filters.retain(|f| f.field_id != id);
+                if config.sort.as_ref().is_some_and(|s| s.field_id == id) {
+                    config.sort = None;
+                }
+                if config.group_by == Some(id) {
+                    config.group_by = None;
+                }
+                sqlx::query("UPDATE views SET config=$2 WHERE id=$1")
+                    .bind(view.try_get::<Uuid, _>("id")?)
+                    .bind(encode(config)?)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
         tx.commit().await?;
         Ok(result)
     }

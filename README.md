@@ -30,8 +30,14 @@ This builds PostgreSQL 16 from Ubuntu's packages inside OrbStack; the default im
 
 - Create forms and reusable option lists; rename and archive forms.
 - Add, rename, reorder, require, and archive fields through the form designer.
-- Search, sort, filter, paginate, adjust column order/width/visibility, and save named views.
-- Create/edit records in a schema-driven inspector; inspect conflicts and deliberately resubmit after review.
+- Search, sort, filter, group, paginate, adjust column order/visibility, and save named views, including grouping and first-column freeze.
+- Drag column boundaries to resize; widths autosave to the current view on release. Escape cancels; keyboard arrows resize. Numeric width inputs also autosave. Failed saves keep the local width and offer Retry. Resizing preserves pending view adjustments.
+- Open a column menu for field settings, linked-form management, duplication with data, insert left/right, descriptions, sorting/filtering/grouping, hiding, and archival. The first visible data column freezes by default.
+- Create options or linked records directly from an empty relation search. Targets with additional required values must be completed in their form.
+- Edit cells inline: Enter/click away saves, Escape cancels, Tab moves to the next cell. Notes, relations, and files use compact cell controls; failed saves retain the draft.
+- Right-click rows for Open Editor, insert above/below, duplicate (including files), and confirmed delete. Insertions use inline draft rows and persist manual order; explicit sorts/filters still apply.
+- Hover row numbers to select records, select the current page, and delete a selection. Bulk delete reports partial progress and stops at the first failure.
+- Use the schema-driven inspector for explicit full-record editing and conflict review.
 - Search related records, reuse colored option choices, and disable choices while preserving history.
 - Upload/download/remove private attachments (10 MB per file).
 - Import CSV with column mapping, row validation, explicit relation resolution, an error report, and atomic commit.
@@ -93,7 +99,7 @@ pnpm contracts                    # regenerate OpenAPI and TypeScript declaratio
 pnpm backup:check                  # isolated local backup/restore drill; stop the API first
 ```
 
-The API check refuses remote targets and only administers disposable SQLx databases on this project's local development service. It covers auth/workspace boundaries, invalid-write rollback, relation invariants, concurrent edits, attachments, import atomicity, and cookie Origin protection. A short browser check is appropriate when changing interactions; there is no large visual-test suite.
+The API check refuses remote targets and only administers disposable SQLx databases on this project's local development service. It covers auth/workspace boundaries, invalid-write rollback, relation invariants, concurrent edits, attachments, persistent relative insertion, duplication/file independence, import atomicity, and cookie Origin protection. A short browser check is appropriate when changing interactions; there is no large visual-test suite.
 
 ## Architecture and delivery
 

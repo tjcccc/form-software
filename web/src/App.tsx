@@ -167,7 +167,20 @@ function AuthenticatedApp({ session, onSignedOut }: { session: Session; onSigned
         </div>
       )}
       {selected ? (
-        <Workspace key={selected} formId={selected} forms={forms} session={session} onFormsChanged={refresh} />
+        <Workspace
+          key={selected}
+          formId={selected}
+          forms={forms}
+          session={session}
+          onFormsChanged={refresh}
+          onNavigateForm={(id) => {
+            const form = forms.find((f) => f.id === id);
+            if (form) {
+              if (form.kind === "options") setOptionsOpen(true);
+              select(form);
+            }
+          }}
+        />
       ) : (
         <main className="welcome-workspace">
           <span className="eyebrow">A CLEAN SLATE</span>
@@ -252,7 +265,7 @@ function Login({ initialError, onSignedIn }: { initialError: string; onSignedIn:
         </form>
         <div className="login-card-footer">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
-          <span>v0.2</span>
+          <span>v0.3</span>
         </div>
       </main>
       <footer className="login-footer">

@@ -1,5 +1,33 @@
 # Development log
 
+## 2026-10-16 · v0.4.0 · Field families and manual filters checkpoint
+
+Checkpointed shared field settings for Number formatting, configurable ratings, explicit single/multiple selects and record links, compact manual filters, field descriptions, aligned grid/inspector headers, and fixes for new-column visibility and clipped filter choices. Synchronized workspace/web manifests, Cargo lock metadata, API version, and visible version labels at 0.4.0. Further UI polish remains planned; this checkpoint preserves the current implementation.
+
+Reused passing TypeScript/ESLint, production build, Rust default-workspace check, domain tests, disposable-database API workflow, and focused browser checks recorded below. Checkpoint validation regenerated contracts and checked shared-version consistency and the staged diff. No repository safety scanner or active pre-commit hook was configured; none was installed. Native UI was not retested.
+
+## 2026-10-16 · Field families and grid/picker fixes
+
+Removed the implicit six-column visibility limit in both browser layouts and server width materialization. Unconfigured fields remain visible after refresh; explicit hidden settings remain authoritative. Filter choices now use viewport-constrained fixed positioning with adaptive placement and internal scrolling; focusing search no longer scrolls the dialog or clips its heading/actions.
+
+Unified field creation settings across the column dialog and form designer. Number is one UI family with existing whole/decimal storage contracts, configurable display precision, currency codes, and percent formatting in percentage points. Decimal formatting uses string/BigInt rounding to preserve precision. Ratings use integer values with readable maximum/icon/color JSON configuration, server-validated bounds, and guarded scale reductions. Added inline/inspector icon controls and keyboard input. Single select, Multiple select, and Link to another record are explicit presets over existing canonical relations, including self-links and one/many cardinality. Account assignment remains deferred with future membership and sharing authorization. No migration or binary packing is required.
+
+Validation: TypeScript/ESLint, production build, Rust default-workspace check, domain tests, regenerated contracts, and the existing disposable API scenario extended for default visibility, rating bounds/config changes, incompatible scale reductions, exact decimal persistence, number format changes, and immutable relation settings. Focused browser checks cover seventh-column reload visibility, rating editing, exact large currency display, multiple selection, field preset creation, and filter-popup bounds at desktop, mobile, and short viewport sizes. Disposable fixtures were archived afterward. Native UI remains a simpler scalar editor and was not retested.
+
+## 2026-10-16 · Compact manual filters
+
+Unified toolbar and column filtering in a wide, responsive dialog with compact Field → Operator → Value rows, explicit apply/cancel behavior, field-aware inputs, and local validation. Relation choices are searchable with removable selections and multi-select for any-of/none-of. Empty checks omit the value control. Disabled options remain searchable for historical records. Filtering has no AI features.
+
+Added server-side not-equals, any-of, none-of, and not-empty operators. Relation predicates use canonical links without duplicating source rows; negatives include empty cells. Validated UUID operands and bounded lists, retained legacy relation contains compatibility, and regenerated API contracts. No migration is needed.
+
+Validation: TypeScript/ESLint, production web build, Rust default-workspace check, and the existing disposable-database HTTP workflow extended for typed/relation filters, multi-link counts, missing values, disabled choices, invalid operands, and saved-view round trips. Focused browser checks cover draft validation, choice search/multi-selection, any-of/none-of results, empty checks, desktop alignment, and mobile control/picker bounds. Temporary fixture forms were archived afterward.
+
+## 2026-10-16 · Dialog spacing and field-description consistency
+
+Fixed the column-filter dialog’s missing body padding, aligned its controls/footer with the dialog heading, and constrained filter rows on small screens. Table and record-inspector headers now share a 38px height token rather than independent sizing. Added optional descriptions to the form designer’s Add a field section, reset them after successful creation, and show descriptions in the designer field list. Uses the existing field-description API without server changes.
+
+Validation: TypeScript/ESLint and production build; focused browser checks for filter-control bounds at desktop/mobile sizes, exact table/inspector header alignment, and description creation, reset, persistence, and header tooltip readback. Temporary browser fixture forms were archived afterward. No Rust/API checks were repeated because backend inputs were unchanged.
+
 ## 2026-10-16 · v0.3.0 · Interactive table workspace checkpoint
 
 Checkpointed inline cell editing, record context actions and multi-selection, persistent insertion order, relation quick add, column actions and descriptions, grouping, default first-column freeze, automatic column-width persistence, and the trailing add-field button. Synchronized workspace/web manifests, Cargo lock metadata, API version, and visible version labels at 0.3.0. Detailed implementation and validation notes follow below.

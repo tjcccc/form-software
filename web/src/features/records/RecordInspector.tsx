@@ -238,7 +238,7 @@ export function RecordInspector({
             {fields.map((field) => (
               <div className={`field-group ${issues[field.id] ? "has-error" : ""}`} key={field.id}>
                 <label htmlFor={`field-${field.id}`}>
-                  <FieldIcon type={field.type} />
+                  <FieldIcon type={field.type} config={field.config} />
                   {field.name}
                   {field.required && <span className="required-mark">*</span>}
                 </label>

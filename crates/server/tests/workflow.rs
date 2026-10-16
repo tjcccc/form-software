@@ -56,6 +56,15 @@ impl Api {
         )
         .await
     }
+    async fn filtered(&self, form: Uuid, filters: Value) -> reqwest::Response {
+        self.client
+            .get(format!("{}/api/v1/forms/{form}/records", self.base))
+            .bearer_auth(&self.token)
+            .query(&[("filter", filters.to_string())])
+            .send()
+            .await
+            .expect("filtered request")
+    }
     async fn create(&self, form: Uuid, values: Value) -> Record {
         self.ok(
             Method::POST,
@@ -811,14 +820,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
             .collect::<Vec<_>>(),
         active.iter().map(|f| f.id).collect::<Vec<_>>()
     );
-    assert!(
-        resized
-            .config
-            .columns
-            .iter()
-            .enumerate()
-            .all(|(i, c)| c.hidden == (i >= 6))
-    );
+    assert!(resized.config.columns.iter().all(|c| !c.hidden));
     assert_eq!(
         resized
             .config
@@ -937,5 +939,172 @@ async fn authenticated_record_workflow(pool: PgPool) {
     );
     assert_eq!(loaded.config.group_by, custom.config.group_by);
     assert!(!loaded.config.freeze_first);
+    // Full relation-filter semantics, including empties and multi-link overlap.
+    let beta = api
+        .create(
+            options.form.id,
+            json!({options.fields[0].id.to_string():"Beta",enabled.to_string():true}),
+        )
+        .await;
+    let other_choice = api.create(work.form.id,json!({name.to_string():"Other choice",relation.id.to_string():[beta.id],multi.id.to_string():[beta.id]})).await;
+    let mixed_choice = api.create(work.form.id,json!({name.to_string():"Mixed choices",relation.id.to_string():[option.id],multi.id.to_string():[option.id,beta.id]})).await;
+    let _: Record = api
+        .ok(
+            Method::PATCH,
+            &format!("/api/v1/records/{}", beta.id),
+            json!({"expected_version":beta.version,"values":{enabled.to_string():false}}),
+        )
+        .await;
+    for (op, value, total) in [
+        ("eq", json!(alpha.id), 2),
+        ("ne", json!(alpha.id), 5),
+        ("any_of", json!([alpha.id, beta.id]), 4),
+        ("none_of", json!([alpha.id, beta.id]), 3),
+        ("empty", Value::Null, 3),
+        ("not_empty", Value::Null, 4),
+        ("contains", json!(alpha.id), 2),
+    ] {
+        let response = api
+            .filtered(
+                work.form.id,
+                json!([{"field_id":multi.id,"op":op,"value":value}]),
+            )
+            .await;
+        assert!(response.status().is_success(), "Valid {op} relation filter");
+        let page: RecordPage = response.json().await.expect("relation filter contract");
+        assert_eq!(page.total, total, "{op} relation semantics");
+        assert_eq!(
+            page.records
+                .iter()
+                .map(|r| r.id)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            page.records.len(),
+            "Multi-link matches never duplicate rows"
+        );
+    }
+    let page: RecordPage=api.filtered(work.form.id,json!([{"field_id":multi.id,"op":"ne","value":alpha.id},{"field_id":multi.id,"op":"not_empty","value":null}])).await.json().await.expect("combined filters");
+    assert_eq!(page.total, 2);
+    assert!(
+        page.records.iter().any(|r| r.id == other_choice.id)
+            && page.records.iter().any(|r| r.id == mixed_choice.id)
+    );
+    for (op, total) in [("ne", 5), ("not_empty", 3), ("empty", 4)] {
+        let page: RecordPage = api
+            .filtered(
+                work.form.id,
+                json!([{"field_id":duration.id,"op":op,"value":90}]),
+            )
+            .await
+            .json()
+            .await
+            .expect("scalar negatives");
+        assert_eq!(page.total, total, "Scalar {op} handles missing values");
+    }
+    let _: Record = api
+        .create(
+            options.form.id,
+            json!({options.fields[0].id.to_string():"Unset flag"}),
+        )
+        .await;
+    for (op, total) in [("eq", 1), ("ne", 3), ("empty", 1), ("not_empty", 3)] {
+        let page: RecordPage = api
+            .filtered(
+                options.form.id,
+                json!([{"field_id":enabled,"op":op,"value":false}]),
+            )
+            .await
+            .json()
+            .await
+            .expect("boolean filter");
+        assert_eq!(page.total, total, "False is a value, not empty ({op})");
+    }
+    for (field, op, value) in [
+        (multi.id, "any_of", json!([])),
+        (multi.id, "none_of", json!([alpha.id, alpha.id])),
+        (multi.id, "any_of", json!(["not-a-uuid"])),
+        (multi.id, "any_of", json!(alpha.id)),
+        (multi.id, "eq", json!([alpha.id])),
+        (multi.id, "any_of", json!(vec![Uuid::new_v4(); 101])),
+        (duration.id, "any_of", json!([alpha.id])),
+        (attachment.id, "ne", json!(alpha.id)),
+    ] {
+        assert_eq!(
+            api.filtered(
+                work.form.id,
+                json!([{"field_id":field,"op":op,"value":value}])
+            )
+            .await
+            .status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Reject malformed/incompatible {op}"
+        );
+    }
+    let view: View=api.ok(Method::POST,&format!("/api/v1/forms/{}/views",work.form.id),json!({"name":"Relation filter choices","config":{"columns":[],"sort":null,"filters":[{"field_id":multi.id,"op":"none_of","value":[alpha.id,beta.id]}]}})).await;
+    assert_eq!(
+        serde_json::to_value(&view.config.filters).expect("saved filters")[0]["value"],
+        json!([alpha.id, beta.id])
+    );
+    // Ratings are bounded integer values; presentation settings persist independently of record data.
+    let rating: Field = api.ok(Method::POST, &format!("/api/v1/forms/{}/fields", work.form.id), json!({"name":"Rating","key":"rating","type":"integer","config":{"rating":{"max":10,"icon":"star","color":"ochre"}}})).await;
+    let rated: Record = api
+        .ok(
+            Method::POST,
+            &format!("/api/v1/forms/{}/records", work.form.id),
+            json!({"values":{name.to_string():"Rated",rating.id.to_string():8}}),
+        )
+        .await;
+    assert_eq!(rated.values[&rating.id], json!(8));
+    for value in [json!(-1), json!(11), json!(1.5), json!("8")] {
+        assert_eq!(
+            api.request(
+                Method::POST,
+                &format!("/api/v1/forms/{}/records", work.form.id),
+                json!({"values":{name.to_string():"Bad rating",rating.id.to_string():value}})
+            )
+            .await
+            .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    assert_eq!(
+        api.request(
+            Method::PATCH,
+            &format!("/api/v1/fields/{}", rating.id),
+            json!({"config":{"rating":{"max":5,"icon":"heart","color":"red"}}})
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let restyled: Field = api
+        .ok(
+            Method::PATCH,
+            &format!("/api/v1/fields/{}", rating.id),
+            json!({"config":{"rating":{"max":10,"icon":"heart","color":"red"}}}),
+        )
+        .await;
+    assert_eq!(restyled.config.rating.unwrap().icon, RatingIcon::Heart);
+    let amount: Field = api.ok(Method::POST,&format!("/api/v1/forms/{}/fields",work.form.id),json!({"name":"Amount","key":"amount","type":"decimal","config":{"number_format":"currency","currency":"USD","decimal_places":2}})).await;
+    let money: Record = api.ok(Method::POST,&format!("/api/v1/forms/{}/records",work.form.id),json!({"values":{name.to_string():"Exact amount",amount.id.to_string():"9007199254740993.25"}})).await;
+    assert_eq!(money.values[&amount.id], json!("9007199254740993.25"));
+    let percent: Field = api
+        .ok(
+            Method::PATCH,
+            &format!("/api/v1/fields/{}", amount.id),
+            json!({"config":{"number_format":"percent","decimal_places":1}}),
+        )
+        .await;
+    assert_eq!(percent.config.number_format, Some(NumberFormat::Percent));
+    assert_eq!(
+        api.request(
+            Method::PATCH,
+            &format!("/api/v1/fields/{}", relation.id),
+            json!({"config":{"cardinality":"many"}})
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
     let _ = std::fs::remove_dir_all(storage);
 }

@@ -23,7 +23,8 @@ import { SchemaDesigner } from "../schema/SchemaDesigner";
 import { CsvImport } from "../records/CsvImport";
 import { FieldDialog } from "../schema/FieldDialog";
 import { useFieldActions } from "./useFieldActions";
-import { FilterEditor } from "./ViewControls";
+import { FilterEditor } from "../filters/FilterEditor";
+import { newCondition } from "../filters/filterRules";
 import { ViewControls } from "./ViewControls";
 import { Dialog, ErrorNotice } from "../../components/Dialog";
 import { Popover } from "../../components/Popover";
@@ -46,6 +47,7 @@ export function Workspace({
   const [inspecting, setInspecting] = useState<DataRecord | null | undefined>();
   const [designer, setDesigner] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [filtering, setFiltering] = useState(false);
   const [help, setHelp] = useState(false);
   const [notice, setNotice] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -208,7 +210,6 @@ export function Workspace({
                 views={state.views}
                 viewId={state.viewId}
                 config={config}
-                catalogs={catalogs}
                 onView={state.selectView}
                 onChange={state.changeConfig}
                 onSaved={state.saveView}
@@ -221,6 +222,8 @@ export function Workspace({
                   }
                 }}
                 onNotice={setNotice}
+
+                onFilter={() => setFiltering(true)}
               />
             ) : (
               <span className="eyebrow">LOADING SCHEMA…</span>
@@ -339,7 +342,7 @@ export function Workspace({
         <footer className="workspace-bottom">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
           <span>
-            FormSoftware <span className="bottom-slash">/</span> 0.3
+            FormSoftware <span className="bottom-slash">/</span> 0.4
           </span>
         </footer>
       </div>
@@ -352,21 +355,32 @@ export function Workspace({
           onSaved={(field) => fields.placed(field, fields.dialog?.anchor, fields.dialog?.before)}
         />
       )}
-      {schema && fields.filterField && (
-        <Dialog title={`Filter by ${fields.filterField.name}.`} eyebrow="FILTER RECORDS" onClose={() => fields.setFilterField(undefined)}>
-          <FilterEditor
-            fields={schema.fields.filter((f) => !f.archived_at)}
-            filters={
-              config.filters.some((f) => f.field_id === fields.filterField?.id)
-                ? config.filters
-                : [...config.filters, { field_id: fields.filterField.id, op: "empty", value: null }]
-            }
-            catalogs={catalogs}
-            onChange={(filters) => {
-              state.changeConfig({ ...config, filters });
-              fields.setFilterField(undefined);
-            }}
-          />
+      {schema && (filtering || fields.filterField) && (
+        <Dialog
+          wide
+          title={fields.filterField ? `Filter by ${fields.filterField.name}.` : "Filter records."}
+          eyebrow="FILTER RECORDS"
+          onClose={() => {
+            setFiltering(false);
+            fields.setFilterField(undefined);
+          }}
+        >
+          <div className="filter-dialog-body">
+            <FilterEditor
+              fields={schema.fields.filter((f) => !f.archived_at)}
+              filters={
+                !fields.filterField || config.filters.some((f) => f.field_id === fields.filterField?.id)
+                  ? config.filters
+                  : [...config.filters, newCondition(fields.filterField)]
+              }
+              catalogs={catalogs}
+              onChange={(filters) => {
+                state.changeConfig({ ...config, filters });
+                setFiltering(false);
+                fields.setFilterField(undefined);
+              }}
+            />
+          </div>
         </Dialog>
       )}
       {schema && designer && (

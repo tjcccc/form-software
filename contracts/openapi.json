@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "paths": {
     "/api/v1/attachments/{attachment_id}": {
@@ -1450,6 +1450,30 @@
               }
             ]
           },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decimal_places": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "number_format": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NumberFormat"
+              }
+            ]
+          },
           "presentation": {
             "oneOf": [
               {
@@ -1457,6 +1481,16 @@
               },
               {
                 "$ref": "#/components/schemas/Presentation"
+              }
+            ]
+          },
+          "rating": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RatingConfig"
               }
             ]
           },
@@ -1527,6 +1561,10 @@
         "type": "string",
         "enum": [
           "eq",
+          "ne",
+          "any_of",
+          "none_of",
+          "not_empty",
           "contains",
           "gt",
           "gte",
@@ -1771,11 +1809,61 @@
           }
         }
       },
+      "NumberFormat": {
+        "type": "string",
+        "enum": [
+          "plain",
+          "currency",
+          "percent"
+        ]
+      },
       "Presentation": {
         "type": "string",
         "enum": [
           "select",
           "record_picker"
+        ]
+      },
+      "RatingColor": {
+        "type": "string",
+        "enum": [
+          "ochre",
+          "red",
+          "purple",
+          "blue",
+          "green"
+        ]
+      },
+      "RatingConfig": {
+        "type": "object",
+        "required": [
+          "max",
+          "icon",
+          "color"
+        ],
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/RatingColor"
+          },
+          "icon": {
+            "$ref": "#/components/schemas/RatingIcon"
+          },
+          "max": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "RatingIcon": {
+        "type": "string",
+        "enum": [
+          "star",
+          "heart",
+          "thumbs_up",
+          "flag",
+          "circle"
         ]
       },
       "Record": {
@@ -1950,6 +2038,16 @@
             "type": [
               "boolean",
               "null"
+            ]
+          },
+          "config": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FieldConfig"
+              }
             ]
           },
           "description": {

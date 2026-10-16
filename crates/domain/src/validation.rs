@@ -46,6 +46,40 @@ pub fn validate_field(input: &CreateField) -> Result<(), String> {
     {
         return Err("Only relation fields accept relation configuration.".into());
     }
+    let config = &input.config;
+    let numeric = matches!(input.field_type, FieldType::Integer | FieldType::Decimal);
+    if !numeric
+        && (config.number_format.is_some()
+            || config.decimal_places.is_some()
+            || config.currency.is_some()
+            || config.rating.is_some())
+    {
+        return Err("Only numeric fields accept number or rating settings.".into());
+    }
+    if config.decimal_places.is_some_and(|n| n > 8) {
+        return Err("Display precision must be between 0 and 8 decimal places.".into());
+    }
+    if config
+        .currency
+        .as_ref()
+        .is_some_and(|s| s.len() != 3 || !s.bytes().all(|c| c.is_ascii_uppercase()))
+    {
+        return Err("Use a three-letter uppercase currency code.".into());
+    }
+    if config.currency.is_some() && config.number_format != Some(NumberFormat::Currency) {
+        return Err("Currency codes need currency formatting.".into());
+    }
+    if let Some(rating) = &config.rating {
+        if input.field_type != FieldType::Integer || !(1..=10).contains(&rating.max) {
+            return Err("Ratings need whole-number storage and a maximum between 1 and 10.".into());
+        }
+        if config.number_format.is_some()
+            || config.decimal_places.is_some()
+            || config.currency.is_some()
+        {
+            return Err("Ratings cannot combine with number formatting.".into());
+        }
+    }
     Ok(())
 }
 pub fn is_empty(value: &Value) -> bool {
@@ -117,6 +151,14 @@ pub fn canonical_value(field: &Field, value: &Value) -> Value {
     value.clone()
 }
 fn validate_value(field: &Field, value: &Value) -> Result<(), &'static str> {
+    if let Some(rating) = &field.config.rating {
+        if !value
+            .as_i64()
+            .is_some_and(|v| (0..=i64::from(rating.max)).contains(&v))
+        {
+            return Err("Use a whole-number rating from zero to the configured maximum.");
+        }
+    }
     let valid = match field.field_type {
         FieldType::ShortText => value.as_str().is_some_and(|s| s.chars().count() <= 500),
         FieldType::LongText => value.as_str().is_some_and(|s| s.len() <= 100_000),
@@ -202,6 +244,23 @@ mod tests {
         assert!(validate_value(&field(FieldType::Date), &json!("2024-02-29")).is_ok());
         assert!(validate_value(&field(FieldType::Date), &json!("2025-02-29")).is_err());
         assert!(validate_value(&field(FieldType::Url), &json!("javascript:alert(1)")).is_err());
+    }
+    #[test]
+    fn number_and_rating_configuration() {
+        let mut input: CreateField = serde_json::from_value(json!({"name":"Score","key":"score","type":"integer","config":{"rating":{"max":10,"icon":"star","color":"ochre"}}})).unwrap();
+        assert!(validate_field(&input).is_ok());
+        input.config.rating.as_mut().unwrap().max = 11;
+        assert!(validate_field(&input).is_err());
+        input.config.rating = None;
+        input.field_type = FieldType::ShortText;
+        input.config.number_format = Some(NumberFormat::Percent);
+        assert!(validate_field(&input).is_err());
+        input.field_type = FieldType::Decimal;
+        input.config.number_format = Some(NumberFormat::Currency);
+        input.config.currency = Some("USD".into());
+        assert!(validate_field(&input).is_ok());
+        input.config.currency = Some("bad-code".into());
+        assert!(validate_field(&input).is_err());
     }
     #[test]
     fn relation_cardinality_and_duplicates() {

@@ -17,6 +17,7 @@
   --accent-hover: #a73d25;
   --accent-wash: #f2e6dc;
   --mono: "IBM Plex Mono", monospace;
+  --grid-header-height: 38px;
 }
 * {
   box-sizing: border-box;

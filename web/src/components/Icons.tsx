@@ -1,7 +1,7 @@
 import {
   AlignLeft,
   ArrowDownUp,
-  Binary,
+  Star,
   BookOpen,
   BriefcaseBusiness,
   Building2,
@@ -20,7 +20,7 @@ import {
   Type,
   Globe2,
 } from "lucide-react";
-import type { FieldType } from "../api/types";
+import type { Field, FieldType } from "../api/types";
 const formIcons = {
   table: Table2,
   briefcase: BriefcaseBusiness,
@@ -38,7 +38,7 @@ const fieldIcons = {
   short_text: Type,
   long_text: AlignLeft,
   integer: Hash,
-  decimal: Binary,
+  decimal: Hash,
   boolean: CheckSquare2,
   date: CalendarDays,
   date_time: Clock3,
@@ -47,8 +47,8 @@ const fieldIcons = {
   relation: Link2,
   attachment: Paperclip,
 };
-export function FieldIcon({ type }: { type: FieldType }) {
-  const Icon = fieldIcons[type] ?? Text;
+export function FieldIcon({ type, config }: { type: FieldType; config?: Field["config"] }) {
+  const Icon = config?.rating ? Star : (fieldIcons[type] ?? Text);
   return <Icon size={14} strokeWidth={1.5} />;
 }
 export { ArrowDownUp, ListFilter };

@@ -6,10 +6,10 @@ export function orderedFields(schema: FormSchema, config: ViewConfig) {
 }
 export function columnLayouts(schema: FormSchema, config: ViewConfig) {
   return orderedFields(schema, config).map(
-    (f, index) =>
+    (f) =>
       config.columns.find((c) => c.field_id === f.id) ?? {
         field_id: f.id,
-        hidden: index >= 6,
+        hidden: false,
         width: f.key === "name" ? 350 : f.type === "long_text" ? 320 : f.type === "duration" ? 118 : 156,
       },
   );

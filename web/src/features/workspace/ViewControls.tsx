@@ -1,48 +1,34 @@
 import { useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  ChevronDown,
-  Columns3,
-  Group,
-  Filter,
-  ListFilter,
-  Plus,
-  Save,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Columns3, Group, Filter, ListFilter, Plus, Save, SlidersHorizontal } from "lucide-react";
 import { columnLayouts } from "./columns";
 import { Popover } from "../../components/Popover";
-import type { Catalogs, Field, Filter as FilterRule, FormSchema, View, ViewConfig } from "../../api/types";
+import type { FormSchema, View, ViewConfig } from "../../api/types";
 import { FieldIcon } from "../../components/Icons";
 import { message } from "../../api/client";
-import { titleOf } from "../records/values";
 export function ViewControls({
   schema,
   views,
   viewId,
   config,
-  catalogs,
   onView,
   onChange,
   onSaved,
   onDesigner,
   onNotice,
   onResize,
+  onFilter,
 }: {
   schema: FormSchema;
   views: View[];
   viewId: string;
   config: ViewConfig;
-  catalogs: Catalogs;
   onView: (id: string) => void;
   onChange: (config: ViewConfig) => void;
   onSaved: (name: string) => Promise<void>;
   onDesigner: () => void;
   onNotice: (message: string) => void;
   onResize: (fieldId: string, width: number) => void;
+  onFilter: () => void;
 }) {
   const [viewName, setViewName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -108,23 +94,11 @@ export function ViewControls({
         )}
       </Popover>
       <span className="toolbar-divider" />
-      <Popover
-        active={config.filters.length > 0}
-        label={
-          <>
-            <Filter size={14} />
-            <span>Filter</span>
-            {config.filters.length > 0 && <span className="control-count">{config.filters.length}</span>}
-          </>
-        }
-      >
-        <FilterEditor
-          fields={fields}
-          filters={config.filters}
-          catalogs={catalogs}
-          onChange={(filters) => onChange({ ...config, filters })}
-        />
-      </Popover>
+      <button type="button" className={`tool-button ${config.filters.length ? "active" : ""}`} aria-haspopup="dialog" onClick={onFilter}>
+        <Filter size={14} />
+        <span>Filter</span>
+        {config.filters.length > 0 && <span className="control-count">{config.filters.length}</span>}
+      </button>
       <Popover
         active={!!config.sort}
         label={
@@ -237,7 +211,7 @@ export function ViewControls({
                 <div className="column-setting" key={field.id}>
                   <label>
                     <input type="checkbox" checked={!hidden} onChange={() => update({ hidden: !hidden })} />
-                    <FieldIcon type={field.type} />
+                    <FieldIcon type={field.type} config={field.config} />
                     <span>{field.name}</span>
                   </label>
                   <input
@@ -287,157 +261,6 @@ export function ViewControls({
           Edit form structure
         </button>
       </Popover>
-    </div>
-  );
-}
-export function FilterEditor({
-  fields,
-  filters,
-  catalogs,
-  onChange,
-}: {
-  fields: Field[];
-  filters: FilterRule[];
-  catalogs: Catalogs;
-  onChange: (filters: FilterRule[]) => void;
-}) {
-  const [draft, setDraft] = useState(filters);
-  const operators = (field?: Field) =>
-    field?.type === "attachment"
-      ? [["empty", "is empty"]]
-      : field?.type === "boolean" || field?.type === "relation"
-        ? [
-            ["eq", "is"],
-            ["empty", "is empty"],
-          ]
-        : [
-            ["eq", "is"],
-            ...(["short_text", "long_text", "url"].includes(field?.type ?? "")
-              ? [["contains", "contains"]]
-              : [
-                  ["gt", "is greater than"],
-                  ["gte", "is at least"],
-                  ["lt", "is less than"],
-                  ["lte", "is at most"],
-                ]),
-            ["empty", "is empty"],
-          ];
-  function update(index: number, patch: Partial<FilterRule>) {
-    setDraft((old) => old.map((f, i) => (i === index ? { ...f, ...patch } : f)));
-  }
-  return (
-    <div className="filter-editor">
-      <p className="popover-label">MATCH ALL CONDITIONS</p>
-      {!draft.length && <p className="popover-description">Show only the records you need.</p>}
-      {draft.map((filter, index) => {
-        const field = fields.find((f) => f.id === filter.field_id);
-        const catalog = catalogs[field?.config.target_form_id ?? ""];
-        return (
-          <div className="filter-rule" key={index}>
-            <div className="filter-rule-top">
-              <select
-                aria-label={`Filter ${index + 1} field`}
-                value={filter.field_id}
-                onChange={(e) => {
-                  const next = fields.find((f) => f.id === e.target.value);
-                  update(index, {
-                    field_id: e.target.value,
-                    op: next?.type === "attachment" ? "empty" : "eq",
-                    value: next?.type === "boolean" ? true : "",
-                  });
-                }}
-              >
-                {fields.map((f) => (
-                  <option value={f.id} key={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="icon-button"
-                aria-label="Remove filter"
-                onClick={() => setDraft((old) => old.filter((_, i) => i !== index))}
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <select
-              aria-label={`Filter ${index + 1} operator`}
-              value={filter.op}
-              onChange={(e) => update(index, { op: e.target.value as FilterRule["op"] })}
-            >
-              {operators(field).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            {filter.op !== "empty" &&
-              (field?.type === "relation" ? (
-                <select
-                  aria-label="Related record"
-                  value={String(filter.value ?? "")}
-                  onChange={(e) => update(index, { value: e.target.value })}
-                >
-                  <option value="">Choose a record…</option>
-                  {catalog?.records.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {titleOf(r, catalog.schema)}
-                    </option>
-                  ))}
-                </select>
-              ) : field?.type === "boolean" ? (
-                <select
-                  aria-label="Boolean value"
-                  value={String(filter.value)}
-                  onChange={(e) => update(index, { value: e.target.value === "true" })}
-                >
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-              ) : (
-                <input
-                  aria-label={`Filter ${index + 1} value`}
-                  type={
-                    field?.type === "date" ? "date" : ["integer", "duration", "decimal"].includes(field?.type ?? "") ? "number" : "text"
-                  }
-                  placeholder="Value…"
-                  value={String(filter.value ?? "")}
-                  onChange={(e) =>
-                    update(index, { value: ["integer", "duration"].includes(field?.type ?? "") ? Number(e.target.value) : e.target.value })
-                  }
-                />
-              ))}
-          </div>
-        );
-      })}
-      <button
-        className="text-button"
-        onClick={() => {
-          const field = fields[0];
-          if (field) {
-            setDraft([...draft, { field_id: field.id, op: "eq", value: "" }]);
-          }
-        }}
-      >
-        <Plus size={13} />
-        Add condition
-      </button>
-      <div className="filter-actions">
-        <button
-          className="text-button"
-          onClick={() => {
-            setDraft([]);
-            onChange([]);
-          }}
-        >
-          Clear
-        </button>
-        <button className="button primary small" onClick={() => onChange(draft)}>
-          <Check size={13} />
-          Apply filters
-        </button>
-      </div>
     </div>
   );
 }

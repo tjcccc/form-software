@@ -106,9 +106,45 @@ pub enum Presentation {
     Select,
     RecordPicker,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NumberFormat {
+    Plain,
+    Currency,
+    Percent,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RatingIcon {
+    Star,
+    Heart,
+    ThumbsUp,
+    Flag,
+    Circle,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RatingColor {
+    Ochre,
+    Red,
+    Purple,
+    Blue,
+    Green,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RatingConfig {
+    pub max: u8,
+    pub icon: RatingIcon,
+    pub color: RatingColor,
+}
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FieldConfig {
+    pub number_format: Option<NumberFormat>,
+    pub decimal_places: Option<u8>,
+    pub currency: Option<String>,
+    pub rating: Option<RatingConfig>,
     pub target_form_id: Option<Uuid>,
     pub cardinality: Option<Cardinality>,
     pub presentation: Option<Presentation>,
@@ -146,6 +182,7 @@ pub struct CreateField {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateField {
+    pub config: Option<FieldConfig>,
     pub description: Option<String>,
     pub name: Option<String>,
     pub position: Option<i32>,
@@ -211,6 +248,10 @@ pub struct Attachment {
 #[serde(rename_all = "snake_case")]
 pub enum FilterOp {
     Eq,
+    Ne,
+    AnyOf,
+    NoneOf,
+    NotEmpty,
     Contains,
     Gt,
     Gte,

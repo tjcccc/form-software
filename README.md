@@ -29,7 +29,8 @@ This builds PostgreSQL 16 from Ubuntu's packages inside OrbStack; the default im
 ## Working workspace
 
 - Create forms and reusable option lists; rename and archive forms.
-- Add, rename, reorder, require, and archive fields through the form designer.
+- Add, rename, reorder, require, and archive fields through the form designer. Number fields support whole/decimal precision and plain/currency/percent display; ratings offer configurable scales, icons, and colors. Single/multiple selects and links use reusable, validated relations.
+- Filter with compact field/operator/value conditions, searchable relation choices, any-of/none-of multi-selection, and empty/not-empty checks. Conditions combine with AND and persist in named views.
 - Search, sort, filter, group, paginate, adjust column order/visibility, and save named views, including grouping and first-column freeze.
 - Drag column boundaries to resize; widths autosave to the current view on release. Escape cancels; keyboard arrows resize. Numeric width inputs also autosave. Failed saves keep the local width and offer Retry. Resizing preserves pending view adjustments.
 - Open a column menu for field settings, linked-form management, duplication with data, insert left/right, descriptions, sorting/filtering/grouping, hiding, and archival. The first visible data column freezes by default.

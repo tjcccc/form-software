@@ -380,7 +380,12 @@ export interface components {
         };
         FieldConfig: {
             cardinality?: null | components["schemas"]["Cardinality"];
+            currency?: string | null;
+            /** Format: int32 */
+            decimal_places?: number | null;
+            number_format?: null | components["schemas"]["NumberFormat"];
             presentation?: null | components["schemas"]["Presentation"];
+            rating?: null | components["schemas"]["RatingConfig"];
             /** Format: uuid */
             target_form_id?: string | null;
         };
@@ -398,7 +403,7 @@ export interface components {
             value: unknown;
         };
         /** @enum {string} */
-        FilterOp: "eq" | "contains" | "gt" | "gte" | "lt" | "lte" | "empty";
+        FilterOp: "eq" | "ne" | "any_of" | "none_of" | "not_empty" | "contains" | "gt" | "gte" | "lt" | "lte" | "empty";
         Form: {
             /** Format: date-time */
             archived_at?: string | null;
@@ -464,7 +469,19 @@ export interface components {
             token: string;
         };
         /** @enum {string} */
+        NumberFormat: "plain" | "currency" | "percent";
+        /** @enum {string} */
         Presentation: "select" | "record_picker";
+        /** @enum {string} */
+        RatingColor: "ochre" | "red" | "purple" | "blue" | "green";
+        RatingConfig: {
+            color: components["schemas"]["RatingColor"];
+            icon: components["schemas"]["RatingIcon"];
+            /** Format: int32 */
+            max: number;
+        };
+        /** @enum {string} */
+        RatingIcon: "star" | "heart" | "thumbs_up" | "flag" | "circle";
         Record: {
             attachments: components["schemas"]["Attachment"][];
             /** Format: date-time */
@@ -517,6 +534,7 @@ export interface components {
         };
         UpdateField: {
             archived?: boolean | null;
+            config?: null | components["schemas"]["FieldConfig"];
             description?: string | null;
             name?: string | null;
             /** Format: int32 */

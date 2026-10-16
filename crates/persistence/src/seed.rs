@@ -451,6 +451,7 @@ fn relation(target: Uuid, cardinality: Cardinality) -> FieldConfig {
         target_form_id: Some(target),
         cardinality: Some(cardinality),
         presentation: Some(Presentation::Select),
+        ..Default::default()
     }
 }
 async fn make_form(

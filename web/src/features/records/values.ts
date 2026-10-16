@@ -1,4 +1,5 @@
 import type { Catalogs, DataRecord, Field, FormSchema, Values } from "../../api/types";
+import { formatNumber } from "./numbers";
 export function titleOf(record: DataRecord, schema: FormSchema) {
   const primary = schema.fields.find((f) => f.key === "name") ?? schema.fields[0];
   const value = primary ? record.values[primary.id] : null;
@@ -49,6 +50,8 @@ export function displayValue(field: Field, value: unknown, catalogs: Catalogs): 
   if (field.type === "boolean") {
     return value ? "Yes" : "No";
   }
+  if (field.config.rating) return `${value} / ${field.config.rating.max}`;
+  if (field.type === "integer" || field.type === "decimal") return formatNumber(field, value);
   return String(value);
 }
 export function initialValues(schema: FormSchema): Values {

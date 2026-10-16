@@ -33,7 +33,7 @@ export function InlineCellEditor({
   const ref = useRef<HTMLDivElement>(null);
   const dirty = JSON.stringify(value) !== JSON.stringify(record.values[field.id]);
   const rect = anchor.getBoundingClientRect();
-  const expanded = ["long_text", "relation", "attachment"].includes(field.type);
+  const expanded = !!field.config.rating || ["long_text", "relation", "attachment"].includes(field.type);
   const width = Math.min(window.innerWidth - 16, expanded ? Math.max(rect.width, 330) : rect.width);
 
   async function save() {

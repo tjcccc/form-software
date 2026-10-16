@@ -1,3 +1,4 @@
+import { Rating } from "./Rating";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useRecordGrid } from "./useRecordGrid";
 import { InlineCellEditor } from "./InlineCellEditor";
@@ -190,7 +191,7 @@ export function RecordTable({
                     setColumnMenu({ field, anchor: e.currentTarget, x: r.left, y: r.bottom });
                   }}
                 >
-                  <FieldIcon type={field.type} />
+                  <FieldIcon type={field.type} config={field.config} />
                   <span>{field.name}</span>
                   {config.sort?.field_id === field.id && (config.sort.descending ? <ArrowDown size={13} /> : <ArrowUp size={13} />)}
                   <ChevronDown size={12} className="column-menu-chevron" />
@@ -417,6 +418,7 @@ function Cell({ field, record, catalogs }: { field: Field; record: DataRecord; c
       </span>
     );
   }
+  if (field.config.rating) return <Rating field={field} value={value} />;
   if (field.type === "boolean") {
     return <span className={`boolean-cell ${value ? "checked" : ""}`}>{value ? <Check size={13} /> : "—"}</span>;
   }

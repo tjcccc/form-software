@@ -1,23 +1,12 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, Archive, Plus, Save } from "lucide-react";
 import { api, message } from "../../api/client";
-import type { CreateField, Field, FieldType, Form, FormSchema } from "../../api/types";
+import type { CreateField, Field, Form, FormSchema } from "../../api/types";
 import { Dialog, ErrorNotice } from "../../components/Dialog";
 import { FieldIcon, FormIcon } from "../../components/Icons";
 import { machineKey } from "../records/values";
-const fieldNames: Record<FieldType, string> = {
-  short_text: "Short text",
-  long_text: "Long text",
-  integer: "Integer",
-  decimal: "Decimal",
-  boolean: "Checkbox",
-  date: "Date",
-  date_time: "Date & time",
-  duration: "Duration",
-  url: "URL",
-  relation: "Relation / select",
-  attachment: "Attachment",
-};
+import { FieldSettings } from "./FieldSettings";
+import { useFieldSettings, fieldLabel } from "./fieldDefinitions";
 export function CreateFormDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (schema: FormSchema) => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -130,10 +119,10 @@ export function SchemaDesigner({
   const [formName, setFormName] = useState(schema.form.name);
   const [description, setDescription] = useState(schema.form.description);
   const [name, setName] = useState("");
-  const [type, setType] = useState<FieldType>("short_text");
+  const [fieldDescription, setFieldDescription] = useState("");
+  const settings = useFieldSettings();
+  const { type } = settings;
   const [required, setRequired] = useState(false);
-  const [target, setTarget] = useState("");
-  const [many, setMany] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function action(fn: () => Promise<void>) {
@@ -171,14 +160,16 @@ export function SchemaDesigner({
   async function add() {
     const input: CreateField = {
       name,
+      description: fieldDescription.trim(),
       key: machineKey(name),
       type,
       required: type === "attachment" ? false : required,
-      config: type === "relation" ? { target_form_id: target, cardinality: many ? "many" : "one", presentation: "select" } : {},
+      config: settings.config,
     };
     const field = await api.createField(schema.form.id, input);
     setFields((old) => [...old, field]);
     setName("");
+    setFieldDescription("");
     setRequired(false);
   }
   return (
@@ -258,37 +249,22 @@ export function SchemaDesigner({
                 <label htmlFor="new-field-name">Name</label>
                 <input id="new-field-name" value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Progress" />
               </div>
-              <div className="field-group">
-                <label htmlFor="new-field-type">Type</label>
-                <select id="new-field-type" value={type} onChange={(e) => setType(e.target.value as FieldType)}>
-                  {Object.entries(fieldNames).map(([key, label]) => (
-                    <option value={key} key={key}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
-            {type === "relation" && (
-              <>
-                <div className="field-group">
-                  <label htmlFor="relation-target">Related form or option list</label>
-                  <select id="relation-target" required value={target} onChange={(e) => setTarget(e.target.value)}>
-                    <option value="">Choose a target…</option>
-                    {forms.map((form) => (
-                      <option key={form.id} value={form.id}>
-                        {form.name}
-                        {form.kind === "options" ? " · option list" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <label className="checkbox-control">
-                  <input type="checkbox" checked={many} onChange={(e) => setMany(e.target.checked)} />
-                  Allow multiple records
-                </label>
-              </>
-            )}
+            <FieldSettings settings={settings} forms={forms} prefix="new-field" />
+            <div className="field-group">
+              <label htmlFor="new-field-description">
+                Description <span className="optional">optional</span>
+              </label>
+              <textarea
+                id="new-field-description"
+                rows={2}
+                maxLength={4000}
+                value={fieldDescription}
+                onChange={(e) => setFieldDescription(e.target.value)}
+                placeholder="Explain the field’s meaning, units, or usage."
+              />
+              <span className="field-hint">Shown in the column header tooltip and record editor.</span>
+            </div>
             {type !== "attachment" && (
               <label className="checkbox-control">
                 <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} />
@@ -358,7 +334,7 @@ function FieldRow({
   return (
     <div className="schema-field-row">
       <span className="schema-field-number">{String(index + 1).padStart(2, "0")}</span>
-      <FieldIcon type={field.type} />
+      <FieldIcon type={field.type} config={field.config} />
       <div className="schema-field-name">
         <input
           aria-label={`Rename ${field.name}`}
@@ -372,8 +348,9 @@ function FieldRow({
           }}
         />
         <span>
-          {fieldNames[field.type]} <span className="schema-key">/ {field.key}</span>
+          {fieldLabel(field)} <span className="schema-key">/ {field.key}</span>
         </span>
+        {field.description && <p className="schema-field-description">{field.description}</p>}
       </div>
       <label className="checkbox-control compact">
         <input

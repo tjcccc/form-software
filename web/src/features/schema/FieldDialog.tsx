@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Save } from "lucide-react";
 import { Dialog, ErrorNotice } from "../../components/Dialog";
 import { api, message } from "../../api/client";
-import type { Field, FieldType, Form } from "../../api/types";
+import type { Field, Form } from "../../api/types";
+import { FieldSettings } from "./FieldSettings";
+import { useFieldSettings } from "./fieldDefinitions";
 import { machineKey } from "../records/values";
 export type FieldDialogState = { field?: Field; anchor?: Field; before?: boolean; descriptionOnly?: boolean };
 export function FieldDialog({
@@ -20,10 +22,9 @@ export function FieldDialog({
 }) {
   const [name, setName] = useState(state.field?.name ?? "");
   const [description, setDescription] = useState(state.field?.description ?? "");
-  const [type, setType] = useState<FieldType>(state.field?.type ?? "short_text");
+  const settings = useFieldSettings(state.field);
+  const { type } = settings;
   const [required, setRequired] = useState(state.field?.required ?? false);
-  const [target, setTarget] = useState("");
-  const [many, setMany] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function save() {
@@ -31,7 +32,12 @@ export function FieldDialog({
     setError("");
     try {
       const field = state.field
-        ? await api.updateField(state.field.id, { name, description, required })
+        ? await api.updateField(state.field.id, {
+            name,
+            description,
+            required,
+            config: !state.descriptionOnly && ["integer", "decimal"].includes(type) ? settings.config : undefined,
+          })
         : await api.createField(formId, {
             name,
             description,
@@ -39,8 +45,7 @@ export function FieldDialog({
             type,
             required: type === "attachment" ? false : required,
             position: state.anchor ? state.anchor.position + (state.before ? 0 : 1) : undefined,
-            config:
-              type === "relation" ? { target_form_id: target, cardinality: many ? "many" : "one", presentation: "record_picker" } : {},
+            config: settings.config,
           });
       onSaved(field);
     } catch (e) {
@@ -71,50 +76,7 @@ export function FieldDialog({
                 <label htmlFor="column-name">Field name</label>
                 <input id="column-name" autoFocus required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
               </div>
-              <div className="field-group">
-                <label htmlFor="column-type">Type</label>
-                <select id="column-type" value={type} disabled={!!state.field} onChange={(e) => setType(e.target.value as FieldType)}>
-                  {(
-                    [
-                      "short_text",
-                      "long_text",
-                      "integer",
-                      "decimal",
-                      "boolean",
-                      "date",
-                      "date_time",
-                      "duration",
-                      "url",
-                      "relation",
-                      "attachment",
-                    ] as FieldType[]
-                  ).map((kind) => (
-                    <option key={kind} value={kind}>
-                      {kind.replaceAll("_", " ")}
-                    </option>
-                  ))}
-                </select>
-                {state.field && <span className="field-hint">Existing types and relation targets stay fixed to preserve stored data.</span>}
-              </div>
-              {!state.field && type === "relation" && (
-                <>
-                  <div className="field-group">
-                    <label htmlFor="column-target">Linked form</label>
-                    <select id="column-target" required value={target} onChange={(e) => setTarget(e.target.value)}>
-                      <option value="">Choose a form…</option>
-                      {forms.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <label className="checkbox-control">
-                    <input type="checkbox" checked={many} onChange={(e) => setMany(e.target.checked)} />
-                    Allow multiple records
-                  </label>
-                </>
-              )}
+              <FieldSettings settings={settings} forms={forms} prefix="column" existing={!!state.field} />
               <label className="checkbox-control">
                 <input
                   type="checkbox"

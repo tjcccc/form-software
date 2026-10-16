@@ -191,6 +191,31 @@ impl Store {
         if field.archived_at.is_some() {
             return Err(invalid("Archived fields cannot be changed."));
         }
+        if let Some(config) = &input.config {
+            if !matches!(field.field_type, FieldType::Integer | FieldType::Decimal) {
+                return Err(invalid(
+                    "Only number and rating display settings can be changed.",
+                ));
+            }
+            checked(validate_field(&CreateField {
+                key: field.key.clone(),
+                name: field.name.clone(),
+                description: field.description.clone(),
+                field_type: field.field_type,
+                required: field.required,
+                position: None,
+                config: config.clone(),
+            }))?;
+            if let Some(rating) = &config.rating {
+                let outside: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM records WHERE form_id=$1 AND deleted_at IS NULL AND (NULLIF(btrim(data->>($2::text)),'')::numeric < 0 OR NULLIF(btrim(data->>($2::text)),'')::numeric > $3))")
+                    .bind(field.form_id).bind(id.to_string()).bind(i32::from(rating.max)).fetch_one(&mut *tx).await?;
+                if outside {
+                    return Err(invalid(
+                        "Existing values exceed this rating scale. Adjust the values first.",
+                    ));
+                }
+            }
+        }
         if input.required == Some(true) && !field.required {
             if field.field_type == FieldType::Attachment {
                 return Err(invalid("Attachment fields must be optional."));
@@ -208,8 +233,8 @@ impl Store {
                 ));
             }
         }
-        let row = sqlx::query("UPDATE fields SET name=coalesce($2,name),description=coalesce($6,description),required=coalesce($3,required),position=coalesce($4,position),archived_at=CASE WHEN $5 THEN now() ELSE archived_at END WHERE id=$1 RETURNING to_jsonb(fields) AS value")
-            .bind(id).bind(input.name).bind(input.required).bind(input.position).bind(input.archived.unwrap_or(false)).bind(input.description).fetch_one(&mut *tx).await?;
+        let row = sqlx::query("UPDATE fields SET name=coalesce($2,name),description=coalesce($6,description),config=coalesce($7,config),required=coalesce($3,required),position=coalesce($4,position),archived_at=CASE WHEN $5 THEN now() ELSE archived_at END WHERE id=$1 RETURNING to_jsonb(fields) AS value")
+            .bind(id).bind(input.name).bind(input.required).bind(input.position).bind(input.archived.unwrap_or(false)).bind(input.description).bind(input.config.map(encode).transpose()?).fetch_one(&mut *tx).await?;
         let result = decode(&row, "value")?;
         if input.archived == Some(true) {
             let views = sqlx::query("SELECT id,config FROM views WHERE form_id=$1")

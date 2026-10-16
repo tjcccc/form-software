@@ -78,7 +78,7 @@ impl Store {
                 ordered.push(field.id);
             }
         }
-        for (index, id) in ordered.into_iter().enumerate() {
+        for id in ordered {
             if view.config.columns.iter().any(|c| c.field_id == id) {
                 continue;
             }
@@ -95,7 +95,7 @@ impl Store {
                 view.config.columns.push(ColumnLayout {
                     field_id: id,
                     width,
-                    hidden: index >= 6,
+                    hidden: false,
                 });
             }
         }

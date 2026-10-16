@@ -454,13 +454,48 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
         } else {
             ("attachments", "record_id")
         };
-        if matches!(filter.op, FilterOp::Empty) {
-            qb.push("NOT ");
-        } else if !matches!(filter.op, FilterOp::Eq | FilterOp::Contains)
-            || field.field_type == FieldType::Attachment
-        {
-            return Err(invalid("Unsupported relation/attachment filter."));
+        let empty_check = matches!(filter.op, FilterOp::Empty | FilterOp::NotEmpty);
+        if field.field_type == FieldType::Attachment && !empty_check {
+            return Err(invalid(
+                "Attachment fields support empty or not-empty filters.",
+            ));
         }
+        if matches!(filter.op, FilterOp::Empty | FilterOp::Ne | FilterOp::NoneOf) {
+            qb.push("NOT ");
+        }
+        let ids: Vec<Uuid> = if empty_check {
+            vec![]
+        } else if matches!(filter.op, FilterOp::AnyOf | FilterOp::NoneOf) {
+            let values = filter.value.as_array().ok_or(invalid(
+                "Relation list filters need an array of record UUIDs.",
+            ))?;
+            if values.is_empty() || values.len() > 100 {
+                return Err(invalid("Choose between 1 and 100 related records."));
+            }
+            let ids: Vec<Uuid> = values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .and_then(|s| Uuid::parse_str(s).ok())
+                        .ok_or(invalid("Relation filters need record UUIDs."))
+                })
+                .collect::<Result<_>>()?;
+            if ids.iter().collect::<std::collections::HashSet<_>>().len() != ids.len() {
+                return Err(invalid("Related record choices must be unique."));
+            }
+            ids
+        } else if matches!(filter.op, FilterOp::Eq | FilterOp::Ne | FilterOp::Contains) {
+            vec![
+                filter
+                    .value
+                    .as_str()
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .ok_or(invalid("Relation filters need a record UUID."))?,
+            ]
+        } else {
+            return Err(invalid("Unsupported relation filter."));
+        };
         qb.push("EXISTS(SELECT 1 FROM ")
             .push(table)
             .push(" x WHERE x.")
@@ -473,16 +508,16 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
             })
             .push("=")
             .push_bind(field.id);
-        if !matches!(filter.op, FilterOp::Empty) {
-            let id = filter
-                .value
-                .as_str()
-                .and_then(|s| Uuid::parse_str(s).ok())
-                .ok_or(invalid("Relation filters need a record UUID."))?;
-            qb.push(" AND x.target_record_id=").push_bind(id);
+        if !empty_check {
+            qb.push(" AND x.target_record_id = ANY(")
+                .push_bind(ids)
+                .push(")");
         }
         qb.push(")");
-    } else if matches!(filter.op, FilterOp::Empty) {
+    } else if matches!(filter.op, FilterOp::Empty | FilterOp::NotEmpty) {
+        if matches!(filter.op, FilterOp::NotEmpty) {
+            qb.push("NOT ");
+        }
         qb.push("(r.data->")
             .push_bind(field.id.to_string())
             .push(" IS NULL OR r.data->")
@@ -507,6 +542,9 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
             .push_bind(field.id.to_string())
             .push(")) > 0");
     } else {
+        if matches!(filter.op, FilterOp::AnyOf | FilterOp::NoneOf) {
+            return Err(invalid("List filters are available on relation fields."));
+        }
         issues(validate_values(
             &[Field {
                 required: false,
@@ -518,12 +556,17 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
         if filter.value.is_null() {
             return Err(invalid("Use the empty operator for empty values."));
         }
-        if field.field_type == FieldType::Boolean && !matches!(filter.op, FilterOp::Eq) {
-            return Err(invalid("Boolean fields support equals or empty."));
+        if field.field_type == FieldType::Boolean
+            && !matches!(filter.op, FilterOp::Eq | FilterOp::Ne)
+        {
+            return Err(invalid(
+                "Boolean fields support equals, not-equals, or empty checks.",
+            ));
         }
         push_scalar(qb, field);
         qb.push(match filter.op {
             FilterOp::Eq => " = ",
+            FilterOp::Ne => " IS DISTINCT FROM ",
             FilterOp::Gt => " > ",
             FilterOp::Gte => " >= ",
             FilterOp::Lt => " < ",

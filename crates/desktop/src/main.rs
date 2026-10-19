@@ -1,8 +1,5 @@
 mod workspace;
-use gpui::{
-    App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, rgb,
-    size,
-};
+use gpui::{App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, rgb, size};
 use gpui_component::{Root, Theme, ThemeMode};
 fn main() {
     Application::new().run(|cx: &mut App| {

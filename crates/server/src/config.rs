@@ -11,16 +11,12 @@ pub struct Config {
 }
 impl Config {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        let origin =
-            std::env::var("FORM_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:5173".into());
-        if origin.ends_with('/')
-            || !(origin.starts_with("http://") || origin.starts_with("https://"))
-        {
+        let origin = std::env::var("FORM_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:5173".into());
+        if origin.ends_with('/') || !(origin.starts_with("http://") || origin.starts_with("https://")) {
             return Err("FORM_ORIGIN must be an HTTP(S) origin without a trailing slash".into());
         }
         Ok(Self {
-            database_url: std::env::var("DATABASE_URL")
-                .map_err(|_| "DATABASE_URL is required; run pnpm dev:setup")?,
+            database_url: std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is required; run pnpm dev:setup")?,
             bind: std::env::var("FORM_BIND")
                 .unwrap_or_else(|_| "127.0.0.1:3141".into())
                 .parse()?,

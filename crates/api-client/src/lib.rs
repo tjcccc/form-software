@@ -34,8 +34,7 @@ pub struct Client {
 }
 impl Client {
     pub fn new(base: &str, token: Option<String>) -> Result<Self> {
-        let url = reqwest::Url::parse(base)
-            .map_err(|_| ClientError::Invalid("Invalid server URL.".into()))?;
+        let url = reqwest::Url::parse(base).map_err(|_| ClientError::Invalid("Invalid server URL.".into()))?;
         if !["http", "https"].contains(&url.scheme())
             || url.username() != ""
             || url.password().is_some()
@@ -61,9 +60,7 @@ impl Client {
         })
     }
     fn request(&self, method: Method, path: &str) -> RequestBuilder {
-        let builder = self
-            .http
-            .request(method, format!("{}/api/v1{path}", self.base));
+        let builder = self.http.request(method, format!("{}/api/v1{path}", self.base));
         match &self.token {
             Some(token) => builder.bearer_auth(token),
             None => builder,
@@ -108,10 +105,7 @@ impl Client {
         self.get(&format!("/forms/{id}/schema"))
     }
     pub fn records(&self, id: Uuid, query: &RecordQuery) -> Result<RecordPage> {
-        self.decode(
-            self.request(Method::GET, &format!("/forms/{id}/records"))
-                .query(query),
-        )
+        self.decode(self.request(Method::GET, &format!("/forms/{id}/records")).query(query))
     }
     pub fn record(&self, id: Uuid) -> Result<Record> {
         self.get(&format!("/records/{id}"))
@@ -164,9 +158,7 @@ impl Client {
         )
     }
     pub fn download(&self, id: Uuid) -> Result<Vec<u8>> {
-        let response = self
-            .request(Method::GET, &format!("/attachments/{id}"))
-            .send()?;
+        let response = self.request(Method::GET, &format!("/attachments/{id}")).send()?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.json()?;

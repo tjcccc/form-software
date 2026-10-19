@@ -1,5 +1,15 @@
 # Development log
 
+## 2026-10-19 · v0.4.1 · On-demand lint setup
+
+Added `pnpm lint` and `pnpm lint:fix` for project-authored JavaScript/TypeScript, CSS, Markdown, shell, and Rust. Retained ESLint and Prettier, double quotes, and 140-column web formatting; applied the global 120-column rustfmt baseline and inherited workspace Clippy rules. Added pinned lint dependencies and documented system-tool setup. No hooks, Git hook configuration, or CI changes were made. Generated contracts and runtime/build output remain excluded; the project-owned MVP specification is included. HTML and SQL linting remain deferred.
+
+The initial report found 105 `curly` violations, 29 import-order violations, two Markdown list-spacing issues, one bare URL, one shell formatting mismatch, and 24 Rust files needing formatting. Clippy reported one collapsible condition in both library targets and four `expect` calls in integration-test helpers; the condition was simplified and helpers explicitly retain immediate fixture failures. Applied mechanical fixes and documented approved CSS cascade/specificity exceptions in the README and file-scoped Stylelint overrides. CSS selector precedence and stylesheet import order are preserved.
+
+Checkpoint: synchronized workspace/web manifests, API metadata, and visible labels at `0.4.1`; regenerated contracts. Reused passing development checks below, then checked generated/version metadata, lint, and the web build. No repository safety scanner or active pre-commit hook is configured.
+
+Validation: lint/fix commands, TypeScript/ESLint, production web build, default-workspace Rust check, all three domain tests, and diff review. Clippy also includes native on macOS. No database workflows or browser checks were needed for these mechanical changes.
+
 ## 2026-10-16 · v0.4.0 · Field families and manual filters checkpoint
 
 Checkpointed shared field settings for Number formatting, configurable ratings, explicit single/multiple selects and record links, compact manual filters, field descriptions, aligned grid/inspector headers, and fixes for new-column visibility and clipped filter choices. Synchronized workspace/web manifests, Cargo lock metadata, API version, and visible version labels at 0.4.0. Further UI polish remains planned; this checkpoint preserves the current implementation.

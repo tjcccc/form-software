@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+
 import { api, ApiError, message } from "../../api/client";
 import type { DataRecord, Field, FormSchema, ViewConfig } from "../../api/types";
 import type { RecordAction } from "./RecordContextMenu";
@@ -38,10 +39,14 @@ export function useRecordGrid({
   }
   useEffect(() => {
     const navigate = (e: Event) => {
-      if (draft || busy) e.preventDefault();
+      if (draft || busy) {
+        e.preventDefault();
+      }
     };
     const unload = (e: BeforeUnloadEvent) => {
-      if (draft || busy) e.preventDefault();
+      if (draft || busy) {
+        e.preventDefault();
+      }
     };
     window.addEventListener("formsw:before-navigate", navigate);
     window.addEventListener("beforeunload", unload);
@@ -65,8 +70,11 @@ export function useRecordGrid({
     setActive({ record, field, anchor });
   }
   function saved(record: DataRecord) {
-    if (record.id === draft?.record.id) setDraft({ ...draft, record });
-    else onSaved(record);
+    if (record.id === draft?.record.id) {
+      setDraft({ ...draft, record });
+    } else {
+      onSaved(record);
+    }
   }
   function closeCell() {
     const anchor = active?.anchor;
@@ -74,7 +82,9 @@ export function useRecordGrid({
     anchor?.focus();
   }
   async function action(kind: RecordAction) {
-    if (!menu) return;
+    if (!menu) {
+      return;
+    }
     const record = menu.record;
     closeMenu();
     if (kind === "open") {
@@ -91,8 +101,9 @@ export function useRecordGrid({
     }
     setError("");
     if (kind === "above" || kind === "below") {
-      if (config.sort || config.group_by)
+      if (config.sort || config.group_by) {
         onNotice("The new row keeps its manual position; active grouping and sorting determine where it appears after saving.");
+      }
       setDraft({
         anchor: record,
         before: kind === "above",
@@ -129,8 +140,9 @@ export function useRecordGrid({
       !window.confirm(
         `Delete ${items.length === 1 ? `“${titleOf(items[0], schema)}”` : `${items.length} selected records`}? Records will be archived.`,
       )
-    )
+    ) {
       return;
+    }
     setBusy(true);
     setError("");
     let deleted = 0;

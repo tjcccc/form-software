@@ -1,4 +1,5 @@
 import { useState } from "react";
+
 import { api, message } from "../../api/client";
 import type { Field, FormSchema, ViewConfig } from "../../api/types";
 import type { FieldDialogState } from "../schema/FieldDialog";
@@ -38,7 +39,9 @@ export function useFieldActions({
   const [filterField, setFilterField] = useState<Field>();
   const [busy, setBusy] = useState(false);
   function placed(field: Field, anchor?: Field, before = false) {
-    if (!schema) return;
+    if (!schema) {
+      return;
+    }
     if (anchor || !schema.fields.some((f) => f.id === field.id)) {
       const columns = columnLayouts(schema, config).filter((c) => c.field_id !== field.id);
       const index = anchor ? columns.findIndex((c) => c.field_id === anchor.id) + (before ? 0 : 1) : columns.length;
@@ -49,7 +52,9 @@ export function useFieldActions({
     onChanged();
   }
   function add() {
-    if (!schema || busy) return;
+    if (!schema || busy) {
+      return;
+    }
     if (blocked) {
       onNotice("Save or close the record editor first.");
       return;
@@ -57,7 +62,9 @@ export function useFieldActions({
     setDialog({ anchor: visibleFields(schema, config).at(-1), before: false });
   }
   async function action(field: Field, action: ColumnAction) {
-    if (!schema || busy) return;
+    if (!schema || busy) {
+      return;
+    }
     if (blocked) {
       onNotice("Save or close the record editor first.");
       return;
@@ -97,12 +104,14 @@ export function useFieldActions({
     if (
       action === "delete" &&
       !window.confirm(`Delete “${field.name}” from this form? The field will be archived and historical values retained.`)
-    )
+    ) {
       return;
+    }
     setBusy(true);
     try {
-      if (action === "duplicate") placed(await api.duplicateField(field.id), field);
-      else if (action === "delete") {
+      if (action === "duplicate") {
+        placed(await api.duplicateField(field.id), field);
+      } else if (action === "delete") {
         await api.updateField(field.id, { archived: true });
         onConfig({
           ...config,

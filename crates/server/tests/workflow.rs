@@ -1,4 +1,7 @@
 //! One focused HTTP integration scenario against a fresh SQLx-managed disposable database.
+// Integration-test helpers intentionally fail immediately on invalid fixtures or responses.
+#![allow(clippy::expect_used)]
+
 use form_domain::*;
 use reqwest::{Client, Method, StatusCode};
 use serde_json::{Value, json};
@@ -28,12 +31,7 @@ impl Api {
             .bearer_auth(&self.token);
         request.json(&body).send().await.expect("HTTP request")
     }
-    async fn ok<T: serde::de::DeserializeOwned>(
-        &self,
-        method: Method,
-        path: &str,
-        body: Value,
-    ) -> T {
+    async fn ok<T: serde::de::DeserializeOwned>(&self, method: Method, path: &str, body: Value) -> T {
         let response = self.request(method, path, body).await;
         let status = response.status();
         let value: Value = response.json().await.expect("JSON response");
@@ -41,12 +39,8 @@ impl Api {
         serde_json::from_value(value).expect("response contract")
     }
     async fn form(&self, key: &str, kind: &str) -> FormSchema {
-        self.ok(
-            Method::POST,
-            "/api/v1/forms",
-            json!({"key":key,"name":key,"kind":kind}),
-        )
-        .await
+        self.ok(Method::POST, "/api/v1/forms", json!({"key":key,"name":key,"kind":kind}))
+            .await
     }
     async fn field(&self, form: Uuid, key: &str, kind: &str, config: Value) -> Field {
         self.ok(
@@ -137,9 +131,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
     let options = api.form("types", "options").await;
     let projects = api.form("projects", "standard").await;
     let name = work.fields[0].id;
-    let duration = api
-        .field(work.form.id, "duration", "duration", json!({}))
-        .await;
+    let duration = api.field(work.form.id, "duration", "duration", json!({})).await;
     let relation = api
         .field(
             work.form.id,
@@ -148,15 +140,8 @@ async fn authenticated_record_workflow(pool: PgPool) {
             json!({"target_form_id":options.form.id,"cardinality":"one","presentation":"select"}),
         )
         .await;
-    let attachment = api
-        .field(work.form.id, "files", "attachment", json!({}))
-        .await;
-    let enabled = options
-        .fields
-        .iter()
-        .find(|f| f.key == "enabled")
-        .expect("enabled")
-        .id;
+    let attachment = api.field(work.form.id, "files", "attachment", json!({})).await;
+    let enabled = options.fields.iter().find(|f| f.key == "enabled").expect("enabled").id;
     let option = api
         .create(
             options.form.id,
@@ -169,7 +154,12 @@ async fn authenticated_record_workflow(pool: PgPool) {
             json!({projects.fields[0].id.to_string():"FormSoftware"}),
         )
         .await;
-    let record=api.create(work.form.id,json!({name.to_string():"First entry",duration.id.to_string():60,relation.id.to_string():[option.id]})).await;
+    let record = api
+        .create(
+            work.form.id,
+            json!({name.to_string():"First entry",duration.id.to_string():60,relation.id.to_string():[option.id]}),
+        )
+        .await;
     let path = format!("/api/v1/records/{}", record.id);
     let raw: Value = sqlx::query_scalar("SELECT data FROM records WHERE id=$1")
         .bind(record.id)
@@ -186,11 +176,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         json!({name.to_string():"should roll back",relation.id.to_string():[project.id]}),
     ] {
         let response = api
-            .request(
-                Method::PATCH,
-                &path,
-                json!({"expected_version":1,"values":values}),
-            )
+            .request(Method::PATCH, &path, json!({"expected_version":1,"values":values}))
             .await;
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -262,8 +248,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         .expect("page contract");
     assert_eq!(page.total, 1);
     assert!(page.records.is_empty());
-    let part =
-        reqwest::multipart::Part::bytes(b"integration attachment".to_vec()).file_name("notes.txt");
+    let part = reqwest::multipart::Part::bytes(b"integration attachment".to_vec()).file_name("notes.txt");
     let attached: Record = client
         .post(format!("{base}{path}/attachments"))
         .bearer_auth(&api.token)
@@ -286,10 +271,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         .send()
         .await
         .expect("download");
-    assert_eq!(
-        download.bytes().await.expect("bytes"),
-        "integration attachment"
-    );
+    assert_eq!(download.bytes().await.expect("bytes"), "integration attachment");
     assert_eq!(
         client
             .get(format!("{base}/api/v1/attachments/{}", file.id))
@@ -299,16 +281,10 @@ async fn authenticated_record_workflow(pool: PgPool) {
             .status(),
         StatusCode::UNAUTHORIZED
     );
-    let mapping =
-        json!([{"column":"Name","field_id":name},{"column":"Minutes","field_id":duration.id}]);
-    let bad_import =
-        json!({"form_id":work.form.id,"csv":"Name,Minutes\nGood,20\nBad,-5\n","mapping":mapping});
+    let mapping = json!([{"column":"Name","field_id":name},{"column":"Minutes","field_id":duration.id}]);
+    let bad_import = json!({"form_id":work.form.id,"csv":"Name,Minutes\nGood,20\nBad,-5\n","mapping":mapping});
     let preview: ImportPreview = api
-        .ok(
-            Method::POST,
-            "/api/v1/imports/csv/preview",
-            bad_import.clone(),
-        )
+        .ok(Method::POST, "/api/v1/imports/csv/preview", bad_import.clone())
         .await;
     assert!(!preview.valid);
     assert_eq!(preview.rows.len(), 2);
@@ -335,11 +311,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
     // Relative insertion is persisted, validated, and version checked.
     let insert_path = format!("{path}/insert");
     for (values, version, status) in [
-        (
-            json!({}),
-            attached.version,
-            StatusCode::UNPROCESSABLE_ENTITY,
-        ),
+        (json!({}), attached.version, StatusCode::UNPROCESSABLE_ENTITY),
         (json!({name.to_string(): "stale"}), 1, StatusCode::CONFLICT),
     ] {
         assert_eq!(
@@ -353,8 +325,20 @@ async fn authenticated_record_workflow(pool: PgPool) {
             status
         );
     }
-    let above: Record = api.ok(Method::POST, &insert_path, json!({"values":{name.to_string():"Above"},"before":true,"expected_version":attached.version})).await;
-    let below: Record = api.ok(Method::POST, &insert_path, json!({"values":{name.to_string():"Below"},"before":false,"expected_version":attached.version})).await;
+    let above: Record = api
+        .ok(
+            Method::POST,
+            &insert_path,
+            json!({"values":{name.to_string():"Above"},"before":true,"expected_version":attached.version}),
+        )
+        .await;
+    let below: Record = api
+        .ok(
+            Method::POST,
+            &insert_path,
+            json!({"values":{name.to_string():"Below"},"before":false,"expected_version":attached.version}),
+        )
+        .await;
     let order: RecordPage = api
         .ok(
             Method::GET,
@@ -363,10 +347,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         )
         .await;
     let ids: Vec<_> = order.records.iter().map(|r| r.id).collect();
-    assert!(
-        ids.windows(3)
-            .any(|ids| ids == [above.id, attached.id, below.id])
-    );
+    assert!(ids.windows(3).any(|ids| ids == [above.id, attached.id, below.id]));
     // Invalid duplicate relations roll back metadata and clean up copied files.
     let files_before = std::fs::read_dir(&storage).expect("storage").count();
     assert_eq!(
@@ -379,10 +360,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         .status(),
         StatusCode::UNPROCESSABLE_ENTITY
     );
-    assert_eq!(
-        std::fs::read_dir(&storage).expect("storage").count(),
-        files_before
-    );
+    assert_eq!(std::fs::read_dir(&storage).expect("storage").count(), files_before);
     let _: Record = api
         .ok(
             Method::PATCH,
@@ -448,20 +426,23 @@ async fn authenticated_record_workflow(pool: PgPool) {
     // A second workspace must not read, mutate, or reference the first workspace's resources.
     let other_user = Uuid::new_v4();
     let other_workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO users(id,username,password_hash) SELECT $1,'other',password_hash FROM users WHERE id=$2").bind(other_user).bind(login.session.user.id).execute(&pool).await.expect("other user");
+    sqlx::query("INSERT INTO users(id,username,password_hash) SELECT $1,'other',password_hash FROM users WHERE id=$2")
+        .bind(other_user)
+        .bind(login.session.user.id)
+        .execute(&pool)
+        .await
+        .expect("other user");
     sqlx::query("INSERT INTO workspaces(id,slug,name) VALUES($1,'other','Other')")
         .bind(other_workspace)
         .execute(&pool)
         .await
         .expect("other workspace");
-    sqlx::query(
-        "INSERT INTO workspace_memberships(workspace_id,user_id,role) VALUES($1,$2,'owner')",
-    )
-    .bind(other_workspace)
-    .bind(other_user)
-    .execute(&pool)
-    .await
-    .expect("membership");
+    sqlx::query("INSERT INTO workspace_memberships(workspace_id,user_id,role) VALUES($1,$2,'owner')")
+        .bind(other_workspace)
+        .bind(other_user)
+        .execute(&pool)
+        .await
+        .expect("membership");
     let other: LoginResult = client
         .post(format!("{base}/api/v1/auth/login"))
         .json(&json!({"username":"other","password":password}))
@@ -477,10 +458,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         token: other.token,
     };
     assert_eq!(
-        other
-            .request(Method::GET, &path, Value::Null)
-            .await
-            .status(),
+        other.request(Method::GET, &path, Value::Null).await.status(),
         StatusCode::NOT_FOUND
     );
     assert_eq!(
@@ -496,11 +474,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
     );
     assert_eq!(
         other
-            .request(
-                Method::GET,
-                &format!("/api/v1/attachments/{}", file.id),
-                Value::Null
-            )
+            .request(Method::GET, &format!("/api/v1/attachments/{}", file.id), Value::Null)
             .await
             .status(),
         StatusCode::NOT_FOUND
@@ -567,38 +541,22 @@ async fn authenticated_record_workflow(pool: PgPool) {
     let grouped: RecordPage = api
         .ok(
             Method::GET,
-            &format!(
-                "/api/v1/forms/{}/records?group_by={}",
-                work.form.id, relation.id
-            ),
+            &format!("/api/v1/forms/{}/records?group_by={}", work.form.id, relation.id),
             Value::Null,
         )
         .await;
-    assert_eq!(
-        grouped.groups.iter().map(|g| g.count).sum::<i64>(),
-        grouped.total
-    );
+    assert_eq!(grouped.groups.iter().map(|g| g.count).sum::<i64>(), grouped.total);
     let sorted: RecordPage = api
         .ok(
             Method::GET,
-            &format!(
-                "/api/v1/forms/{}/records?sort={}",
-                work.form.id, relation.id
-            ),
+            &format!("/api/v1/forms/{}/records?sort={}", work.form.id, relation.id),
             Value::Null,
         )
         .await;
-    assert_eq!(
-        sorted.records[0].values.get(&relation.id),
-        Some(&json!([option.id]))
-    );
-    let decimal = api
-        .field(work.form.id, "column_decimal", "decimal", json!({}))
-        .await;
+    assert_eq!(sorted.records[0].values.get(&relation.id), Some(&json!([option.id])));
+    let decimal = api.field(work.form.id, "column_decimal", "decimal", json!({})).await;
     for (id, value) in [(record.id, "2"), (above.id, "10"), (below.id, "1")] {
-        let current: Record = api
-            .ok(Method::GET, &format!("/api/v1/records/{id}"), Value::Null)
-            .await;
+        let current: Record = api.ok(Method::GET, &format!("/api/v1/records/{id}"), Value::Null).await;
         let _: Record = api
             .ok(
                 Method::PATCH,
@@ -615,12 +573,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         )
         .await;
     assert_eq!(
-        sorted
-            .records
-            .iter()
-            .take(3)
-            .map(|r| r.id)
-            .collect::<Vec<_>>(),
+        sorted.records.iter().take(3).map(|r| r.id).collect::<Vec<_>>(),
         vec![below.id, record.id, above.id]
     );
     let multi = api
@@ -641,9 +594,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         (record.id, vec![alpha.id, option.id]),
         (above.id, vec![option.id, alpha.id]),
     ] {
-        let current: Record = api
-            .ok(Method::GET, &format!("/api/v1/records/{id}"), Value::Null)
-            .await;
+        let current: Record = api.ok(Method::GET, &format!("/api/v1/records/{id}"), Value::Null).await;
         let _: Record = api
             .ok(
                 Method::PATCH,
@@ -652,14 +603,11 @@ async fn authenticated_record_workflow(pool: PgPool) {
             )
             .await;
     }
-    let filter = serde_json::to_string(&json!([{"field_id":multi.id,"op":"eq","value":alpha.id}]))
-        .expect("group filter");
+    let filter =
+        serde_json::to_string(&json!([{"field_id":multi.id,"op":"eq","value":alpha.id}])).expect("group filter");
     let grouped: RecordPage = api
         .client
-        .get(format!(
-            "{}/api/v1/forms/{}/records",
-            api.base, work.form.id
-        ))
+        .get(format!("{}/api/v1/forms/{}/records", api.base, work.form.id))
         .bearer_auth(&api.token)
         .query(&[
             ("group_by", multi.id.to_string()),
@@ -741,10 +689,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
     assert_ne!(copied_file.id, file.id);
     let bytes = api
         .client
-        .get(format!(
-            "{}/api/v1/attachments/{}",
-            api.base, copied_file.id
-        ))
+        .get(format!("{}/api/v1/attachments/{}", api.base, copied_file.id))
         .bearer_auth(&api.token)
         .send()
         .await
@@ -783,10 +728,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
             Value::Null,
         )
         .await;
-    let view = views
-        .iter()
-        .find(|v| v.name == "Column workflow")
-        .expect("saved view");
+    let view = views.iter().find(|v| v.name == "Column workflow").expect("saved view");
     assert!(
         view.config.columns.is_empty()
             && view.config.filters.is_empty()
@@ -796,9 +738,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
     // Width-only writes preserve implicit order, visibility, and unrelated view preferences.
     let default = views.iter().find(|v| v.is_default).expect("default view");
     let width_path = format!("/api/v1/views/{}/columns/{}/width", default.id, duration.id);
-    let resized: View = api
-        .ok(Method::PATCH, &width_path, json!({"width":272}))
-        .await;
+    let resized: View = api.ok(Method::PATCH, &width_path, json!({"width":272})).await;
     let schema: FormSchema = api
         .ok(
             Method::GET,
@@ -806,18 +746,9 @@ async fn authenticated_record_workflow(pool: PgPool) {
             Value::Null,
         )
         .await;
-    let active: Vec<_> = schema
-        .fields
-        .iter()
-        .filter(|f| f.archived_at.is_none())
-        .collect();
+    let active: Vec<_> = schema.fields.iter().filter(|f| f.archived_at.is_none()).collect();
     assert_eq!(
-        resized
-            .config
-            .columns
-            .iter()
-            .map(|c| c.field_id)
-            .collect::<Vec<_>>(),
+        resized.config.columns.iter().map(|c| c.field_id).collect::<Vec<_>>(),
         active.iter().map(|f| f.id).collect::<Vec<_>>()
     );
     assert!(resized.config.columns.iter().all(|c| !c.hidden));
@@ -859,10 +790,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
     assert_eq!(
         api.request(
             Method::PATCH,
-            &format!(
-                "/api/v1/views/{}/columns/{}/width",
-                default.id, projects.fields[0].id
-            ),
+            &format!("/api/v1/views/{}/columns/{}/width", default.id, projects.fields[0].id),
             json!({"width":300})
         )
         .await
@@ -894,10 +822,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
             Value::Null,
         )
         .await;
-    let loaded = loaded
-        .iter()
-        .find(|v| v.id == custom.id)
-        .expect("saved widths");
+    let loaded = loaded.iter().find(|v| v.id == custom.id).expect("saved widths");
     assert_eq!(loaded.config.columns[0].field_id, relation.id);
     assert!(loaded.config.columns[0].hidden);
     assert_eq!(loaded.config.columns[0].width, 180);
@@ -926,16 +851,8 @@ async fn authenticated_record_workflow(pool: PgPool) {
         serde_json::to_value(&custom.config.filters).expect("filters")
     );
     assert_eq!(
-        loaded
-            .config
-            .sort
-            .as_ref()
-            .map(|s| (s.field_id, s.descending)),
-        custom
-            .config
-            .sort
-            .as_ref()
-            .map(|s| (s.field_id, s.descending))
+        loaded.config.sort.as_ref().map(|s| (s.field_id, s.descending)),
+        custom.config.sort.as_ref().map(|s| (s.field_id, s.descending))
     );
     assert_eq!(loaded.config.group_by, custom.config.group_by);
     assert!(!loaded.config.freeze_first);
@@ -946,7 +863,12 @@ async fn authenticated_record_workflow(pool: PgPool) {
             json!({options.fields[0].id.to_string():"Beta",enabled.to_string():true}),
         )
         .await;
-    let other_choice = api.create(work.form.id,json!({name.to_string():"Other choice",relation.id.to_string():[beta.id],multi.id.to_string():[beta.id]})).await;
+    let other_choice = api
+        .create(
+            work.form.id,
+            json!({name.to_string():"Other choice",relation.id.to_string():[beta.id],multi.id.to_string():[beta.id]}),
+        )
+        .await;
     let mixed_choice = api.create(work.form.id,json!({name.to_string():"Mixed choices",relation.id.to_string():[option.id],multi.id.to_string():[option.id,beta.id]})).await;
     let _: Record = api
         .ok(
@@ -965,10 +887,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         ("contains", json!(alpha.id), 2),
     ] {
         let response = api
-            .filtered(
-                work.form.id,
-                json!([{"field_id":multi.id,"op":op,"value":value}]),
-            )
+            .filtered(work.form.id, json!([{"field_id":multi.id,"op":op,"value":value}]))
             .await;
         assert!(response.status().is_success(), "Valid {op} relation filter");
         let page: RecordPage = response.json().await.expect("relation filter contract");
@@ -986,15 +905,11 @@ async fn authenticated_record_workflow(pool: PgPool) {
     let page: RecordPage=api.filtered(work.form.id,json!([{"field_id":multi.id,"op":"ne","value":alpha.id},{"field_id":multi.id,"op":"not_empty","value":null}])).await.json().await.expect("combined filters");
     assert_eq!(page.total, 2);
     assert!(
-        page.records.iter().any(|r| r.id == other_choice.id)
-            && page.records.iter().any(|r| r.id == mixed_choice.id)
+        page.records.iter().any(|r| r.id == other_choice.id) && page.records.iter().any(|r| r.id == mixed_choice.id)
     );
     for (op, total) in [("ne", 5), ("not_empty", 3), ("empty", 4)] {
         let page: RecordPage = api
-            .filtered(
-                work.form.id,
-                json!([{"field_id":duration.id,"op":op,"value":90}]),
-            )
+            .filtered(work.form.id, json!([{"field_id":duration.id,"op":op,"value":90}]))
             .await
             .json()
             .await
@@ -1002,17 +917,11 @@ async fn authenticated_record_workflow(pool: PgPool) {
         assert_eq!(page.total, total, "Scalar {op} handles missing values");
     }
     let _: Record = api
-        .create(
-            options.form.id,
-            json!({options.fields[0].id.to_string():"Unset flag"}),
-        )
+        .create(options.form.id, json!({options.fields[0].id.to_string():"Unset flag"}))
         .await;
     for (op, total) in [("eq", 1), ("ne", 3), ("empty", 1), ("not_empty", 3)] {
         let page: RecordPage = api
-            .filtered(
-                options.form.id,
-                json!([{"field_id":enabled,"op":op,"value":false}]),
-            )
+            .filtered(options.form.id, json!([{"field_id":enabled,"op":op,"value":false}]))
             .await
             .json()
             .await
@@ -1030,12 +939,9 @@ async fn authenticated_record_workflow(pool: PgPool) {
         (attachment.id, "ne", json!(alpha.id)),
     ] {
         assert_eq!(
-            api.filtered(
-                work.form.id,
-                json!([{"field_id":field,"op":op,"value":value}])
-            )
-            .await
-            .status(),
+            api.filtered(work.form.id, json!([{"field_id":field,"op":op,"value":value}]))
+                .await
+                .status(),
             StatusCode::UNPROCESSABLE_ENTITY,
             "Reject malformed/incompatible {op}"
         );
@@ -1086,7 +992,13 @@ async fn authenticated_record_workflow(pool: PgPool) {
         .await;
     assert_eq!(restyled.config.rating.unwrap().icon, RatingIcon::Heart);
     let amount: Field = api.ok(Method::POST,&format!("/api/v1/forms/{}/fields",work.form.id),json!({"name":"Amount","key":"amount","type":"decimal","config":{"number_format":"currency","currency":"USD","decimal_places":2}})).await;
-    let money: Record = api.ok(Method::POST,&format!("/api/v1/forms/{}/records",work.form.id),json!({"values":{name.to_string():"Exact amount",amount.id.to_string():"9007199254740993.25"}})).await;
+    let money: Record = api
+        .ok(
+            Method::POST,
+            &format!("/api/v1/forms/{}/records", work.form.id),
+            json!({"values":{name.to_string():"Exact amount",amount.id.to_string():"9007199254740993.25"}}),
+        )
+        .await;
     assert_eq!(money.values[&amount.id], json!("9007199254740993.25"));
     let percent: Field = api
         .ok(

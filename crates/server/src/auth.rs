@@ -24,10 +24,7 @@ use uuid::Uuid;
 pub fn hash_token(token: &str) -> String {
     format!("{:x}", Sha256::digest(token.as_bytes()))
 }
-pub async fn initialize(
-    store: &Store,
-    config: &Config,
-) -> Result<Actor, Box<dyn std::error::Error>> {
+pub async fn initialize(store: &Store, config: &Config) -> Result<Actor, Box<dyn std::error::Error>> {
     let existing = sqlx::query("SELECT u.id AS user_id,m.workspace_id FROM users u JOIN workspace_memberships m ON m.user_id=u.id WHERE u.username=$1")
         .bind(&config.username).fetch_optional(&store.pool).await?;
     if let Some(row) = existing {
@@ -40,9 +37,7 @@ pub async fn initialize(
         .fetch_one(&store.pool)
         .await?;
     if count > 0 {
-        return Err(
-            "An owner already exists. FORM_USERNAME must match the provisioned owner.".into(),
-        );
+        return Err("An owner already exists. FORM_USERNAME must match the provisioned owner.".into());
     }
     let password = config
         .password
@@ -73,13 +68,11 @@ pub async fn initialize(
         .bind(actor.workspace_id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query(
-        "INSERT INTO workspace_memberships(workspace_id,user_id,role) VALUES($1,$2,'owner')",
-    )
-    .bind(actor.workspace_id)
-    .bind(actor.user_id)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("INSERT INTO workspace_memberships(workspace_id,user_id,role) VALUES($1,$2,'owner')")
+        .bind(actor.workspace_id)
+        .bind(actor.user_id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(actor)
 }
@@ -106,22 +99,11 @@ fn token(headers: &HeaderMap) -> Option<(String, bool)> {
         })
         .map(|s| (s.into(), true))
 }
-pub async fn protect(
-    State(state): State<Arc<AppState>>,
-    mut request: Request,
-    next: Next,
-) -> HttpResult<Response> {
+pub async fn protect(State(state): State<Arc<AppState>>, mut request: Request, next: Next) -> HttpResult<Response> {
     let (token, is_cookie) = token(request.headers()).ok_or_else(unauthorized)?;
     if is_cookie
-        && !matches!(
-            *request.method(),
-            axum::http::Method::GET | axum::http::Method::HEAD
-        )
-        && request
-            .headers()
-            .get(header::ORIGIN)
-            .and_then(|h| h.to_str().ok())
-            != Some(&state.config.origin)
+        && !matches!(*request.method(), axum::http::Method::GET | axum::http::Method::HEAD)
+        && request.headers().get(header::ORIGIN).and_then(|h| h.to_str().ok()) != Some(&state.config.origin)
     {
         return Err(HttpError::new(
             StatusCode::FORBIDDEN,
@@ -138,11 +120,7 @@ pub async fn protect(
     Ok(next.run(request).await)
 }
 fn unauthorized() -> HttpError {
-    HttpError::new(
-        StatusCode::UNAUTHORIZED,
-        "unauthorized",
-        "Sign in to continue.",
-    )
+    HttpError::new(StatusCode::UNAUTHORIZED, "unauthorized", "Sign in to continue.")
 }
 fn throttle(state: &AppState, ip: IpAddr) -> HttpResult<()> {
     let mut attempts = state
@@ -199,11 +177,7 @@ pub async fn login(
         None => state.dummy_hash.clone(),
     };
     let valid = tokio::task::spawn_blocking(move || {
-        PasswordHash::new(&hash).is_ok_and(|h| {
-            Argon2::default()
-                .verify_password(input.password.as_bytes(), &h)
-                .is_ok()
-        })
+        PasswordHash::new(&hash).is_ok_and(|h| Argon2::default().verify_password(input.password.as_bytes(), &h).is_ok())
     })
     .await
     .map_err(HttpError::internal)?;
@@ -216,7 +190,14 @@ pub async fn login(
     sqlx::query("DELETE FROM sessions WHERE expires_at<now()")
         .execute(&state.store.pool)
         .await?;
-    sqlx::query("INSERT INTO sessions(token_hash,user_id,workspace_id,expires_at) VALUES($1,$2,$3,now()+interval '30 days')").bind(hash_token(&token)).bind(actor.user_id).bind(actor.workspace_id).execute(&state.store.pool).await?;
+    sqlx::query(
+        "INSERT INTO sessions(token_hash,user_id,workspace_id,expires_at) VALUES($1,$2,$3,now()+interval '30 days')",
+    )
+    .bind(hash_token(&token))
+    .bind(actor.user_id)
+    .bind(actor.workspace_id)
+    .execute(&state.store.pool)
+    .await?;
     let result = LoginResult {
         token: token.clone(),
         session: state.store.session_info(actor).await?,
@@ -231,10 +212,7 @@ pub async fn login(
         .into_response())
 }
 #[utoipa::path(delete,path="/api/v1/auth/session",responses((status=204)))]
-pub async fn logout(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> HttpResult<Response> {
+pub async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> HttpResult<Response> {
     if let Some((token, _)) = token(&headers) {
         sqlx::query("DELETE FROM sessions WHERE token_hash=$1")
             .bind(hash_token(&token))
@@ -243,10 +221,7 @@ pub async fn logout(
     }
     Ok((
         StatusCode::NO_CONTENT,
-        [(
-            header::SET_COOKIE,
-            cookie("", state.config.secure_cookie, 0),
-        )],
+        [(header::SET_COOKIE, cookie("", state.config.secure_cookie, 0))],
     )
         .into_response())
 }

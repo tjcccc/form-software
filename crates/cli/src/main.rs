@@ -57,10 +57,7 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
         return output(
             cli,
             &result.session,
-            format!(
-                "Signed in as {}. Token stored securely.",
-                result.session.user.username
-            ),
+            format!("Signed in as {}. Token stored securely.", result.session.user.username),
         );
     }
     let client = Client::new(&cli.server, Some(credentials::load(&cli.server)?))?;
@@ -83,12 +80,7 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
                 let forms = client.forms()?;
                 let text = forms
                     .iter()
-                    .map(|f| {
-                        format!(
-                            "{:<24} {:<28} {:>5}  {}",
-                            f.key, f.name, f.record_count, f.id
-                        )
-                    })
+                    .map(|f| format!("{:<24} {:<28} {:>5}  {}", f.key, f.name, f.record_count, f.id))
                     .collect::<Vec<_>>()
                     .join("\n");
                 output(cli, &forms, text)?;
@@ -118,10 +110,8 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
             }
             FormsCommand::Update { form, input } => {
                 let form = resolve(&client, form)?;
-                let result: Form = client.patch(
-                    &format!("/forms/{}", form.form.id),
-                    &read_json::<UpdateForm>(input)?,
-                )?;
+                let result: Form =
+                    client.patch(&format!("/forms/{}", form.form.id), &read_json::<UpdateForm>(input)?)?;
                 output(cli, &result, result.name.clone())?;
             }
         },
@@ -136,10 +126,7 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
                 output(cli, &result, result.id.to_string())?;
             }
             FieldsCommand::Update { field, input } => {
-                let result: Field = client.patch(
-                    &format!("/fields/{field}"),
-                    &read_json::<UpdateField>(input)?,
-                )?;
+                let result: Field = client.patch(&format!("/fields/{field}"), &read_json::<UpdateField>(input)?)?;
                 output(cli, &result, result.id.to_string())?;
             }
         },
@@ -186,9 +173,7 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
                 text.push_str(&format!(
                     "\n{} records; next cursor: {}",
                     page.total,
-                    page.next_cursor
-                        .map(|v| v.to_string())
-                        .unwrap_or("none".into())
+                    page.next_cursor.map(|v| v.to_string()).unwrap_or("none".into())
                 ));
                 output(cli, &page, text)?;
             }
@@ -204,11 +189,7 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
                 let schema = resolve(&client, form)?;
                 let values = record_values(&schema, input.as_ref(), data.as_deref())?;
                 let result = client.create_record(schema.form.id, values)?;
-                output(
-                    cli,
-                    &result,
-                    format!("Created {} (v{}).", result.id, result.version),
-                )?;
+                output(cli, &result, format!("Created {} (v{}).", result.id, result.version))?;
             }
             RecordsCommand::Update {
                 record,
@@ -220,22 +201,14 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
                 let schema = client.schema(current.form_id)?;
                 let values = record_values(&schema, input.as_ref(), data.as_deref())?;
                 let result = client.update_record(*record, values, *expected_version)?;
-                output(
-                    cli,
-                    &result,
-                    format!("Updated {} (v{}).", result.id, result.version),
-                )?;
+                output(cli, &result, format!("Updated {} (v{}).", result.id, result.version))?;
             }
             RecordsCommand::Archive {
                 record,
                 expected_version,
             } => {
                 client.archive_record(*record, *expected_version)?;
-                output(
-                    cli,
-                    &json!({"archived":record}),
-                    format!("Archived {record}."),
-                )?;
+                output(cli, &json!({"archived":record}), format!("Archived {record}."))?;
             }
         },
         Command::Attachments { command } => match command {
@@ -246,11 +219,7 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
                 expected_version,
             } => {
                 let result = client.upload(*record, *field, *expected_version, file)?;
-                output(
-                    cli,
-                    &result,
-                    format!("Uploaded to {record} (v{}).", result.version),
-                )?;
+                output(cli, &result, format!("Uploaded to {record} (v{}).", result.version))?;
             }
             AttachmentsCommand::Download {
                 attachment,
@@ -290,10 +259,7 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
                         .fields
                         .iter()
                         .find(|f| f.key == key || f.id.to_string() == key)
-                        .map(|f| ImportMapping {
-                            column,
-                            field_id: f.id,
-                        })
+                        .map(|f| ImportMapping { column, field_id: f.id })
                         .ok_or_else(|| invalid(format!("Unknown field: {key}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -304,15 +270,10 @@ fn run(cli: &Cli) -> Result<(), ClientError> {
             };
             if *commit {
                 let result: ImportResult = client.post("/imports/csv/commit", &input)?;
-                output(
-                    cli,
-                    &result,
-                    format!("Imported {} records.", result.created),
-                )?;
+                output(cli, &result, format!("Imported {} records.", result.created))?;
             } else {
                 let result: ImportPreview = client.post("/imports/csv/preview", &input)?;
-                let text =
-                    serde_json::to_string_pretty(&result).map_err(|e| invalid(e.to_string()))?;
+                let text = serde_json::to_string_pretty(&result).map_err(|e| invalid(e.to_string()))?;
                 output(cli, &result, text)?;
                 if !result.valid {
                     return Err(invalid("Preview contains invalid rows; nothing imported."));
@@ -349,10 +310,7 @@ fn show_schema(cli: &Cli, schema: &FormSchema) -> Result<(), ClientError> {
 }
 fn output(cli: &Cli, value: &impl Serialize, text: String) -> Result<(), ClientError> {
     if cli.json {
-        println!(
-            "{}",
-            serde_json::to_string(value).map_err(|e| invalid(e.to_string()))?
-        );
+        println!("{}", serde_json::to_string(value).map_err(|e| invalid(e.to_string()))?);
     } else {
         println!("{text}");
     }
@@ -373,11 +331,7 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<T
     };
     serde_json::from_str(&source).map_err(|e| invalid(e.to_string()))
 }
-fn record_values(
-    schema: &FormSchema,
-    input: Option<&PathBuf>,
-    data: Option<&str>,
-) -> Result<Values, ClientError> {
+fn record_values(schema: &FormSchema, input: Option<&PathBuf>, data: Option<&str>) -> Result<Values, ClientError> {
     let source: BTreeMap<String, Value> = if let Some(path) = input {
         read_json(path)?
     } else if let Some(data) = data {

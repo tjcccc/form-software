@@ -16,6 +16,7 @@ FormSoftware is a **human-first programmable structured-data platform**. Humans 
 Not an Excel replacement, general spreadsheet, all-in-one automation platform, or AI-first knowledge manager.
 
 Core principles:
+
 1. One authoritative backend and one business model; Web, GPUI, and CLI are first-class clients.
 2. Form is schema; Record is the atomic business object; Field is an immutable-ID schema member; Relation connects records.
 3. Common operations are declarative; programmable extensions may come later.
@@ -42,6 +43,7 @@ Core principles:
 The owner can migrate current Airtable Work Logs into FormSoftware, browse the data in a table, edit any record in an inspector, attach files, filter/sort, maintain related Projects, Organizations, and Work Types, and instruct an agent to add/query records through the CLI. A running ECS server and minimally functional GPUI desktop client demonstrate one consistent backend.
 
 **Initial domain fixtures, not hard-coded business logic:**
+
 - `Work Logs`: Date, Summary, Hours/Duration, Type, Project, Organization, Memo, Attachments.
 - `Projects`: Name, Organization, Status, Description.
 - `Organizations`: Name, Notes.
@@ -118,7 +120,7 @@ All identifiers are stable UUIDs; keys (`form.key`, `field.key`) are stable mach
 - `fields.type = relation`, config includes `target_form_id`, `cardinality: one|many`, `presentation: select|record_picker`.
 - Standard single/multi relations use records in an ordinary target Form.
 - Option forms (`forms.kind = options`) have default fields such as Name, Color, Enabled and Position; these are actual records.
-- Newly created select fields can auto-create a *private-by-default* option Form, hidden from ordinary navigation; the owner may choose an existing target Form instead.
+- Newly created select fields can auto-create a _private-by-default_ option Form, hidden from ordinary navigation; the owner may choose an existing target Form instead.
 - Option rename is safe because references use IDs. Disable rather than delete options referenced by history; reject dangerous deletion unless an explicit migration path exists.
 - Server checks that a relation's target record belongs to the configured target Form, that cardinality is observed, and that unauthorized/inactive choices are not newly assigned.
 - Option data is typically fetched eagerly/cached; large normal relation pickers use paged search.

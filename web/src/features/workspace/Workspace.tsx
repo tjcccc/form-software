@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -15,20 +14,22 @@ import {
   Table2,
   X,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+
 import type { DataRecord, Form, Session } from "../../api/types";
-import { useWorkspace } from "./useWorkspace";
-import { RecordTable } from "../records/RecordTable";
-import { RecordInspector } from "../records/RecordInspector";
-import { SchemaDesigner } from "../schema/SchemaDesigner";
-import { CsvImport } from "../records/CsvImport";
-import { FieldDialog } from "../schema/FieldDialog";
-import { useFieldActions } from "./useFieldActions";
-import { FilterEditor } from "../filters/FilterEditor";
-import { newCondition } from "../filters/filterRules";
-import { ViewControls } from "./ViewControls";
 import { Dialog, ErrorNotice } from "../../components/Dialog";
 import { Popover } from "../../components/Popover";
+import { FilterEditor } from "../filters/FilterEditor";
+import { newCondition } from "../filters/filterRules";
+import { CsvImport } from "../records/CsvImport";
+import { RecordInspector } from "../records/RecordInspector";
+import { RecordTable } from "../records/RecordTable";
 import { formatDuration } from "../records/values";
+import { FieldDialog } from "../schema/FieldDialog";
+import { SchemaDesigner } from "../schema/SchemaDesigner";
+import { useFieldActions } from "./useFieldActions";
+import { useWorkspace } from "./useWorkspace";
+import { ViewControls } from "./ViewControls";
 export function Workspace({
   formId,
   forms,
@@ -342,7 +343,7 @@ export function Workspace({
         <footer className="workspace-bottom">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
           <span>
-            FormSoftware <span className="bottom-slash">/</span> 0.4
+            FormSoftware <span className="bottom-slash">/</span> 0.4.1
           </span>
         </footer>
       </div>

@@ -1,6 +1,7 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
-import { api, aborted, message } from "../../api/client";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+
+import { aborted, api, message } from "../../api/client";
 import type { DataRecord, Field, RelationCatalog } from "../../api/types";
 import { titleOf } from "../records/values";
 export function FilterRelationPicker({
@@ -46,20 +47,28 @@ export function FilterRelationPicker({
     return record && catalog ? titleOf(record, catalog.schema) : id.slice(0, 8);
   };
   useEffect(() => {
-    if (!open || !target) return;
+    if (!open || !target) {
+      return;
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => {
       api
         .records(target, new URLSearchParams({ q: query, limit: "100" }), controller.signal)
         .then((page) => {
-          if (controller.signal.aborted) return;
-          for (const record of page.records) cache.current.set(record.id, record);
+          if (controller.signal.aborted) {
+            return;
+          }
+          for (const record of page.records) {
+            cache.current.set(record.id, record);
+          }
           setResult({ query, records: page.records });
           setKnown((old) => [...old.filter((r) => !page.records.some((n) => n.id === r.id)), ...page.records]);
           setError("");
         })
         .catch((e) => {
-          if (!aborted(e)) setError(message(e));
+          if (!aborted(e)) {
+            setError(message(e));
+          }
         });
     }, 180);
     return () => {
@@ -68,29 +77,45 @@ export function FilterRelationPicker({
     };
   }, [open, target, query]);
   useEffect(() => {
-    if (!target || !selectedKey) return;
+    if (!target || !selectedKey) {
+      return;
+    }
     const controller = new AbortController();
     const missing = selectedKey.split(",").filter((id) => !cache.current.has(id) && !catalog?.records.some((r) => r.id === id));
-    if (!missing.length) return;
+    if (!missing.length) {
+      return;
+    }
     Promise.allSettled(missing.map((id) => api.record(id, controller.signal))).then((results) => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        return;
+      }
       const records = results.flatMap((result) => (result.status === "fulfilled" && result.value.form_id === target ? [result.value] : []));
-      for (const record of records) cache.current.set(record.id, record);
+      for (const record of records) {
+        cache.current.set(record.id, record);
+      }
       setKnown((old) => [...old.filter((r) => !records.some((n) => n.id === r.id)), ...records]);
-      if (records.length !== missing.length) setError("A selected record is unavailable. Remove it or choose another.");
+      if (records.length !== missing.length) {
+        setError("A selected record is unavailable. Remove it or choose another.");
+      }
     });
     return () => controller.abort();
   }, [target, selectedKey, catalog]);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
     const outside = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      if (!ref.current?.contains(e.target as Node)) {
+        setOpen(false);
+      }
     };
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
     const place = () => {
       const rect = toggle.current!.getBoundingClientRect();
       const width = Math.min(Math.max(rect.width, 260), window.innerWidth - 32);
@@ -108,7 +133,9 @@ export function FilterRelationPicker({
     ref.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
     window.addEventListener("resize", place);
     const scroll = (event: Event) => {
-      if (!(event.target instanceof Node) || !ref.current?.contains(event.target)) place();
+      if (!(event.target instanceof Node) || !ref.current?.contains(event.target)) {
+        place();
+      }
     };
     document.addEventListener("scroll", scroll, true);
     return () => {
@@ -117,8 +144,9 @@ export function FilterRelationPicker({
     };
   }, [open]);
   function choose(id: string) {
-    if (multiple) onChange(selected.includes(id) ? selected.filter((v) => v !== id) : [...selected, id]);
-    else {
+    if (multiple) {
+      onChange(selected.includes(id) ? selected.filter((v) => v !== id) : [...selected, id]);
+    } else {
       onChange(id);
       setOpen(false);
       toggle.current?.focus();
@@ -137,9 +165,13 @@ export function FilterRelationPicker({
         }
         if (open && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
           const buttons = [...ref.current!.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)')];
-          if (!buttons.length) return;
+          if (!buttons.length) {
+            return;
+          }
           const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-          if (index < 0 && (e.key === "Home" || e.key === "End")) return;
+          if (index < 0 && (e.key === "Home" || e.key === "End")) {
+            return;
+          }
           e.preventDefault();
           buttons[
             e.key === "Home"
@@ -181,7 +213,9 @@ export function FilterRelationPicker({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  if (choices[0] && !(multiple && selected.length >= 100 && !selected.includes(choices[0].id))) choose(choices[0].id);
+                  if (choices[0] && !(multiple && selected.length >= 100 && !selected.includes(choices[0].id))) {
+                    choose(choices[0].id);
+                  }
                 }
               }}
             />

@@ -11,25 +11,14 @@ impl Store {
         Ok(sqlx::query("SELECT a.id,a.storage_key FROM attachments a JOIN records r ON r.id=a.record_id WHERE a.field_id=$1 AND r.deleted_at IS NULL")
             .bind(id).fetch_all(&self.pool).await?.into_iter().map(|r| Ok((r.try_get("id")?,r.try_get("storage_key")?))).collect::<std::result::Result<Vec<_>,sqlx::Error>>()?)
     }
-    pub async fn duplicate_field(
-        &self,
-        actor: Actor,
-        source_id: Uuid,
-        copies: Vec<(Uuid, Uuid)>,
-    ) -> Result<Field> {
+    pub async fn duplicate_field(&self, actor: Actor, source_id: Uuid, copies: Vec<(Uuid, Uuid)>) -> Result<Field> {
         let source = self.field(actor, source_id).await?;
         let mut tx = self.pool.begin().await?;
         Self::lock_form(&mut tx, actor, source.form_id).await?;
         let source = self.field(actor, source_id).await?;
         let current = self.field_attachments(actor, source_id).await?;
-        if current.len() != copies.len()
-            || current
-                .iter()
-                .any(|(old, _)| !copies.iter().any(|(id, _)| id == old))
-        {
-            return Err(invalid(
-                "Attachments changed. Try duplicating the field again.",
-            ));
+        if current.len() != copies.len() || current.iter().any(|(old, _)| !copies.iter().any(|(id, _)| id == old)) {
+            return Err(invalid("Attachments changed. Try duplicating the field again."));
         }
         let id = Uuid::new_v4();
         let key = format!(

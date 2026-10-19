@@ -2,8 +2,11 @@ use crate::*;
 impl Store {
     pub async fn views(&self, actor: Actor, form_id: Uuid) -> Result<Vec<View>> {
         self.form(actor, form_id).await?;
-        let rows = sqlx::query("SELECT to_jsonb(v) AS value FROM views v WHERE form_id=$1 ORDER BY is_default DESC,name")
-            .bind(form_id).fetch_all(&self.pool).await?;
+        let rows =
+            sqlx::query("SELECT to_jsonb(v) AS value FROM views v WHERE form_id=$1 ORDER BY is_default DESC,name")
+                .bind(form_id)
+                .fetch_all(&self.pool)
+                .await?;
         rows.iter().map(|r| decode(r, "value")).collect()
     }
     pub async fn save_view(&self, actor: Actor, form_id: Uuid, input: SaveView) -> Result<View> {
@@ -59,10 +62,7 @@ impl Store {
         let mut tx = self.pool.begin().await?;
         Self::lock_form(&mut tx, actor, form_id).await?;
         let fields = self.fields(form_id).await?;
-        if !fields
-            .iter()
-            .any(|f| f.id == field_id && f.archived_at.is_none())
-        {
+        if !fields.iter().any(|f| f.id == field_id && f.archived_at.is_none()) {
             return Err(invalid("Column field is unavailable in this form."));
         }
         let row = sqlx::query("SELECT to_jsonb(v) AS value FROM views v WHERE id=$1")
@@ -99,12 +99,7 @@ impl Store {
                 });
             }
         }
-        if let Some(column) = view
-            .config
-            .columns
-            .iter_mut()
-            .find(|c| c.field_id == field_id)
-        {
+        if let Some(column) = view.config.columns.iter_mut().find(|c| c.field_id == field_id) {
             column.width = input.width;
         }
         sqlx::query("UPDATE views SET config=$2 WHERE id=$1")

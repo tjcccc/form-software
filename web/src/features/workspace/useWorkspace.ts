@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, aborted, message } from "../../api/client";
-import type { Catalogs, DataRecord, RelationCatalog, FormSchema, RecordPage, View, ViewConfig } from "../../api/types";
+
+import { aborted, api, message } from "../../api/client";
+import type { Catalogs, DataRecord, FormSchema, RecordPage, RelationCatalog, View, ViewConfig } from "../../api/types";
+import { relationIds } from "../records/values";
 import { withColumnWidth } from "./columns";
 import { useColumnWidths } from "./useColumnWidths";
-import { relationIds } from "../records/values";
 export const emptyView: ViewConfig = { columns: [], filters: [], sort: null, group_by: null, freeze_first: true };
 export function useWorkspace(formId: string) {
   const [schema, setSchema] = useState<FormSchema>();
@@ -19,11 +20,15 @@ export function useWorkspace(formId: string) {
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const widths = useColumnWidths((view, fieldId, width) => {
-    if (!schema) return;
+    if (!schema) {
+      return;
+    }
     setViews((old) => old.map((v) => (v.id === view.id ? { ...v, config: withColumnWidth(schema, v.config, fieldId, width) } : v)));
   });
   function resizeColumn(fieldId: string, width: number) {
-    if (!schema || !viewId) return;
+    if (!schema || !viewId) {
+      return;
+    }
     const next = Math.min(800, Math.max(100, Math.round(width)));
     setConfig((old) => withColumnWidth(schema, old, fieldId, next));
     widths.persist({ viewId, fieldId, width: next });
@@ -70,7 +75,9 @@ export function useWorkspace(formId: string) {
     if (filters.length) {
       params.set("filter", JSON.stringify(filters));
     }
-    if (groupBy) params.set("group_by", groupBy);
+    if (groupBy) {
+      params.set("group_by", groupBy);
+    }
     if (sort) {
       params.set("sort", sort.field_id);
       params.set("descending", String(sort.descending));

@@ -1,10 +1,11 @@
+import { ArrowDown, ArrowUp, Check, ChevronDown, Columns3, Filter, Group, ListFilter, Plus, Save, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Columns3, Group, Filter, ListFilter, Plus, Save, SlidersHorizontal } from "lucide-react";
-import { columnLayouts } from "./columns";
-import { Popover } from "../../components/Popover";
+
+import { message } from "../../api/client";
 import type { FormSchema, View, ViewConfig } from "../../api/types";
 import { FieldIcon } from "../../components/Icons";
-import { message } from "../../api/client";
+import { Popover } from "../../components/Popover";
+import { columnLayouts } from "./columns";
 export function ViewControls({
   schema,
   views,
@@ -226,7 +227,9 @@ export function ViewControls({
                     onBlur={(e) => {
                       const next = Math.min(800, Math.max(100, Math.round(Number(e.currentTarget.value))));
                       e.currentTarget.value = String(next);
-                      if (next !== column?.width) onResize(field.id, next);
+                      if (next !== column?.width) {
+                        onResize(field.id, next);
+                      }
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {

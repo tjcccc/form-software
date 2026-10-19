@@ -1,4 +1,5 @@
 import { useState } from "react";
+
 import type { Field, FieldType } from "../../api/types";
 export type Config = Field["config"];
 export const choices = {
@@ -18,10 +19,15 @@ export const choices = {
 };
 export type Kind = keyof typeof choices;
 export function fieldKind(field: Field): Kind {
-  if (field.config.rating) return "rating";
-  if (field.type === "integer" || field.type === "decimal") return "number";
-  if (field.type === "relation" && field.config.presentation === "select")
+  if (field.config.rating) {
+    return "rating";
+  }
+  if (field.type === "integer" || field.type === "decimal") {
+    return "number";
+  }
+  if (field.type === "relation" && field.config.presentation === "select") {
     return field.config.cardinality === "many" ? "multiple" : "single";
+  }
   return field.type as Kind;
 }
 export function fieldLabel(field: Field) {

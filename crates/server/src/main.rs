@@ -65,10 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         password_hash::{SaltString, rand_core::OsRng},
     };
     let dummy_hash = Argon2::default()
-        .hash_password(
-            b"unusable dummy credential",
-            &SaltString::generate(&mut OsRng),
-        )
+        .hash_password(b"unusable dummy credential", &SaltString::generate(&mut OsRng))
         .map_err(|e| e.to_string())?
         .to_string();
     let bind = config.bind;
@@ -86,20 +83,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/forms/{id}/schema", get(routes::schema))
         .route("/forms/{id}/fields", post(routes::create_field))
         .route("/fields/{id}", patch(routes::update_field))
-        .route(
-            "/forms/{id}/records",
-            get(routes::records).post(routes::create_record),
-        )
+        .route("/forms/{id}/records", get(routes::records).post(routes::create_record))
         .route(
             "/records/{id}",
             get(routes::record)
                 .patch(routes::update_record)
                 .delete(routes::archive_record),
         )
-        .route(
-            "/forms/{id}/views",
-            get(routes::views).post(routes::save_view),
-        )
+        .route("/forms/{id}/views", get(routes::views).post(routes::save_view))
         .route(
             "/views/{view_id}/columns/{field_id}/width",
             patch(routes::update_column_width),
@@ -119,12 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/auth/login", post(auth::login))
         .merge(protected)
         .fallback(|| async {
-            error::HttpError::new(
-                axum::http::StatusCode::NOT_FOUND,
-                "not_found",
-                "Unknown API route.",
-            )
-            .into_response()
+            error::HttpError::new(axum::http::StatusCode::NOT_FOUND, "not_found", "Unknown API route.").into_response()
         })
         .layer(SetResponseHeaderLayer::overriding(
             header::CACHE_CONTROL,
@@ -156,9 +142,7 @@ async fn shutdown() {
     #[cfg(unix)]
     {
         let terminate = async {
-            if let Ok(mut signal) =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            {
+            if let Ok(mut signal) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
                 signal.recv().await;
             }
         };

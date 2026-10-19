@@ -4,8 +4,12 @@ use serde_json::json;
 const FORM_SELECT: &str = "SELECT to_jsonb(f) || jsonb_build_object('record_count', (SELECT count(*) FROM records r WHERE r.form_id=f.id AND r.deleted_at IS NULL)) AS value FROM forms f";
 impl Store {
     pub async fn forms(&self, actor: Actor) -> Result<Vec<Form>> {
-        let rows = sqlx::query(&format!("{FORM_SELECT} WHERE f.workspace_id=$1 AND f.archived_at IS NULL ORDER BY f.created_at, f.id"))
-            .bind(actor.workspace_id).fetch_all(&self.pool).await?;
+        let rows = sqlx::query(&format!(
+            "{FORM_SELECT} WHERE f.workspace_id=$1 AND f.archived_at IS NULL ORDER BY f.created_at, f.id"
+        ))
+        .bind(actor.workspace_id)
+        .fetch_all(&self.pool)
+        .await?;
         rows.iter().map(|r| decode(r, "value")).collect()
     }
     pub async fn form(&self, actor: Actor, id: Uuid) -> Result<Form> {
@@ -25,8 +29,11 @@ impl Store {
         Ok(FormSchema { form, fields })
     }
     pub(crate) async fn fields(&self, form_id: Uuid) -> Result<Vec<Field>> {
-        let rows = sqlx::query("SELECT to_jsonb(f) AS value FROM fields f WHERE form_id=$1 ORDER BY position, created_at, id")
-            .bind(form_id).fetch_all(&self.pool).await?;
+        let rows =
+            sqlx::query("SELECT to_jsonb(f) AS value FROM fields f WHERE form_id=$1 ORDER BY position, created_at, id")
+                .bind(form_id)
+                .fetch_all(&self.pool)
+                .await?;
         rows.iter().map(|r| decode(r, "value")).collect()
     }
     pub async fn create_form(&self, actor: Actor, input: CreateForm) -> Result<FormSchema> {
@@ -35,24 +42,23 @@ impl Store {
         if input.description.len() > 4000 {
             return Err(invalid("Description is too long."));
         }
-        if ![
-            "table",
-            "briefcase",
-            "gamepad",
-            "folder",
-            "building",
-            "tag",
-            "book",
-        ]
-        .contains(&input.icon.as_str())
-        {
+        if !["table", "briefcase", "gamepad", "folder", "building", "tag", "book"].contains(&input.icon.as_str()) {
             return Err(invalid("Unknown form icon."));
         }
         let id = Uuid::new_v4();
         let mut tx = self.pool.begin().await?;
-        sqlx::query("INSERT INTO forms(id, workspace_id, key, name, description, kind, icon) VALUES ($1,$2,$3,$4,$5,$6,$7)")
-            .bind(id).bind(actor.workspace_id).bind(&input.key).bind(input.name.trim()).bind(&input.description)
-            .bind(encode(input.kind)?.as_str()).bind(input.icon).execute(&mut *tx).await?;
+        sqlx::query(
+            "INSERT INTO forms(id, workspace_id, key, name, description, kind, icon) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        )
+        .bind(id)
+        .bind(actor.workspace_id)
+        .bind(&input.key)
+        .bind(input.name.trim())
+        .bind(&input.description)
+        .bind(encode(input.kind)?.as_str())
+        .bind(input.icon)
+        .execute(&mut *tx)
+        .await?;
         let defaults = if input.kind == FormKind::Options {
             vec![
                 ("name", "Name", FieldType::ShortText, true),
@@ -65,10 +71,22 @@ impl Store {
         };
         for (i, (key, name, kind, required)) in defaults.into_iter().enumerate() {
             sqlx::query("INSERT INTO fields(id,form_id,key,name,type,required,position) VALUES ($1,$2,$3,$4,$5,$6,$7)")
-                .bind(Uuid::new_v4()).bind(id).bind(key).bind(name).bind(encode(kind)?.as_str()).bind(required).bind(i as i32).execute(&mut *tx).await?;
+                .bind(Uuid::new_v4())
+                .bind(id)
+                .bind(key)
+                .bind(name)
+                .bind(encode(kind)?.as_str())
+                .bind(required)
+                .bind(i as i32)
+                .execute(&mut *tx)
+                .await?;
         }
         sqlx::query("INSERT INTO views(id,form_id,name,is_default,config) VALUES ($1,$2,'All records',true,$3)")
-            .bind(Uuid::new_v4()).bind(id).bind(json!({"columns":[], "sort":null, "filters":[]})).execute(&mut *tx).await?;
+            .bind(Uuid::new_v4())
+            .bind(id)
+            .bind(json!({"columns":[], "sort":null, "filters":[]}))
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
         self.schema(actor, id).await
     }
@@ -94,21 +112,14 @@ impl Store {
             .bind(id).bind(actor.workspace_id).bind(input.name).bind(input.description).bind(input.archived.unwrap_or(false)).execute(&mut *tx).await?;
         tx.commit().await?;
         // Archived form remains a valid response, but is omitted from navigation.
-        let row = sqlx::query(&format!(
-            "{FORM_SELECT} WHERE f.id=$1 AND f.workspace_id=$2"
-        ))
-        .bind(id)
-        .bind(actor.workspace_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let row = sqlx::query(&format!("{FORM_SELECT} WHERE f.id=$1 AND f.workspace_id=$2"))
+            .bind(id)
+            .bind(actor.workspace_id)
+            .fetch_one(&self.pool)
+            .await?;
         decode(&row, "value")
     }
-    pub async fn create_field(
-        &self,
-        actor: Actor,
-        form_id: Uuid,
-        input: CreateField,
-    ) -> Result<Field> {
+    pub async fn create_field(&self, actor: Actor, form_id: Uuid, input: CreateField) -> Result<Field> {
         checked(validate_field(&input))?;
         if input.required && input.field_type == FieldType::Attachment {
             return Err(invalid(
@@ -119,15 +130,17 @@ impl Store {
         Self::lock_form(&mut tx, actor, form_id).await?;
         if let Some(target) = input.config.target_form_id {
             sqlx::query("SELECT id FROM forms WHERE id=$1 AND workspace_id=$2 AND archived_at IS NULL FOR SHARE")
-                .bind(target).bind(actor.workspace_id).fetch_optional(&mut *tx).await?.ok_or(invalid("Target form is unavailable in this workspace."))?;
+                .bind(target)
+                .bind(actor.workspace_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or(invalid("Target form is unavailable in this workspace."))?;
         }
         if input.required {
-            let count: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM records WHERE form_id=$1 AND deleted_at IS NULL",
-            )
-            .bind(form_id)
-            .fetch_one(&mut *tx)
-            .await?;
+            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM records WHERE form_id=$1 AND deleted_at IS NULL")
+                .bind(form_id)
+                .fetch_one(&mut *tx)
+                .await?;
             if count > 0 {
                 return Err(invalid(
                     "Add this field as optional, populate existing records, then make it required.",
@@ -136,22 +149,18 @@ impl Store {
         }
         let position: i32 = match input.position {
             Some(p) => {
-                sqlx::query(
-                    "UPDATE fields SET position=position+1 WHERE form_id=$1 AND position >= $2",
-                )
-                .bind(form_id)
-                .bind(p)
-                .execute(&mut *tx)
-                .await?;
+                sqlx::query("UPDATE fields SET position=position+1 WHERE form_id=$1 AND position >= $2")
+                    .bind(form_id)
+                    .bind(p)
+                    .execute(&mut *tx)
+                    .await?;
                 p
             }
             None => {
-                sqlx::query_scalar(
-                    "SELECT coalesce(max(position),-1)+1 FROM fields WHERE form_id=$1",
-                )
-                .bind(form_id)
-                .fetch_one(&mut *tx)
-                .await?
+                sqlx::query_scalar("SELECT coalesce(max(position),-1)+1 FROM fields WHERE form_id=$1")
+                    .bind(form_id)
+                    .fetch_one(&mut *tx)
+                    .await?
             }
         };
         let row = sqlx::query("INSERT INTO fields(id,form_id,key,name,type,required,config,position,description) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING to_jsonb(fields) AS value")
@@ -184,18 +193,14 @@ impl Store {
             .await?;
         let field: Field = decode(&row, "value")?;
         if field.key == "name" && (input.archived == Some(true) || input.required == Some(false)) {
-            return Err(invalid(
-                "The primary Name field must remain active and required.",
-            ));
+            return Err(invalid("The primary Name field must remain active and required."));
         }
         if field.archived_at.is_some() {
             return Err(invalid("Archived fields cannot be changed."));
         }
         if let Some(config) = &input.config {
             if !matches!(field.field_type, FieldType::Integer | FieldType::Decimal) {
-                return Err(invalid(
-                    "Only number and rating display settings can be changed.",
-                ));
+                return Err(invalid("Only number and rating display settings can be changed."));
             }
             checked(validate_field(&CreateField {
                 key: field.key.clone(),

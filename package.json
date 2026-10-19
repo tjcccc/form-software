@@ -1,7 +1,7 @@
 {
   "name": "formsoftware",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "packageManager": "pnpm@12.9.1",
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -12,10 +12,18 @@
     "test:api": "node scripts/test-api.mjs",
     "dev:setup": "node scripts/dev.mjs setup",
     "desktop": "cargo run -p form-desktop",
-    "backup:check": "node scripts/backup-check.mjs"
+    "backup:check": "node scripts/backup-check.mjs",
+    "lint": "node scripts/lint.mjs",
+    "lint:fix": "node scripts/lint.mjs --fix"
   },
   "devDependencies": {
+    "autocorrect-node": "2.14.0",
+    "eslint": "9.39.5",
+    "eslint-plugin-simple-import-sort": "12.1.1",
+    "markdownlint-cli2": "0.23.3",
     "openapi-typescript": "^7.13.0",
-    "prettier": "^3.8.0"
+    "prettier": "^3.8.0",
+    "stylelint": "17.16.0",
+    "stylelint-config-standard": "40.0.0"
   }
 }

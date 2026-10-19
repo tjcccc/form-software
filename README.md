@@ -14,7 +14,7 @@ pnpm dev:setup
 pnpm dev
 ```
 
-Open **http://127.0.0.1:5173**. The first startup migrates the isolated development database, provisions the owner, and creates synthetic Work Logs, Playing Logs, Projects, Organizations, Games, and Work Types. Credentials are generated in the ignored, owner-readable `.env`: `FORM_USERNAME` and `FORM_PASSWORD`. Change the password there before the first startup if desired; subsequent starts do not reset an existing account.
+Open **<http://127.0.0.1:5173>**. The first startup migrates the isolated development database, provisions the owner, and creates synthetic Work Logs, Playing Logs, Projects, Organizations, Games, and Work Types. Credentials are generated in the ignored, owner-readable `.env`: `FORM_USERNAME` and `FORM_PASSWORD`. Change the password there before the first startup if desired; subsequent starts do not reset an existing account.
 
 The API listens on `127.0.0.1:3141`. PostgreSQL is isolated in the `formsoftware-dev` Compose project and bound only to `127.0.0.1:55437`. Attachment files live in ignored `.local/attachments`. Real Airtable records are never imported automatically.
 
@@ -91,6 +91,8 @@ If Xcode reports a missing Metal toolchain: `xcodebuild -downloadComponent Metal
 
 ```sh
 pnpm check                         # TypeScript + ESLint
+pnpm lint                          # on-demand lint and formatting checks
+pnpm lint:fix                      # apply supported fixes, then report remaining issues
 pnpm build                         # production web build
 cargo fmt --all -- --check
 cargo check --workspace            # includes native; use default cargo check on Linux CI
@@ -101,6 +103,12 @@ pnpm backup:check                  # isolated local backup/restore drill; stop t
 ```
 
 The API check refuses remote targets and only administers disposable SQLx databases on this project's local development service. It covers auth/workspace boundaries, invalid-write rollback, relation invariants, concurrent edits, attachments, persistent relative insertion, duplication/file independence, import atomicity, and cookie Origin protection. A short browser check is appropriate when changing interactions; there is no large visual-test suite.
+
+The new lint commands run on demand, without a pre-commit hook or additional CI gate. They cover tracked and unignored new project files with ESLint, Prettier, Stylelint, markdownlint, AutoCorrect, ShellCheck, shfmt, rustfmt, and Clippy. Generated contracts, lockfiles, dependencies, build output, and agent runtime/state directories are excluded; the MVP specification is included. HTML and SQL linting remain deferred. Prettier retains double quotes and 140 columns; rustfmt uses the global 120-column baseline. On macOS, Clippy includes the native workspace member; other platforms check the default workspace members.
+
+Install JavaScript tools with `pnpm install`, Rust tools with `rustup component add rustfmt clippy`, and shell tools with `brew install shellcheck shfmt` on macOS (or your system package manager). `pnpm lint:fix` applies supported fixes and formatting; remaining violations require manual review. Integration-test helpers allow `expect` so fixture and response failures remain immediate.
+
+Stylelint preserves the existing component and state cascade: the four current stylesheets disable `no-descending-specificity`, which compares selectors across unrelated component contexts. Specificity limits are `0,3,1` for editors, `0,4,0` for tokens, and `0,4,1` for tables; tables allow four compound selectors for row states. Other stylesheets retain the global `0,3,0` specificity and three-compound limits. These exceptions preserve existing selectors and their precedence.
 
 ## Architecture and delivery
 

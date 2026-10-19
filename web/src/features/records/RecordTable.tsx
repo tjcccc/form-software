@@ -1,16 +1,17 @@
-import { Rating } from "./Rating";
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Paperclip, Plus, SearchX, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { useRecordGrid } from "./useRecordGrid";
-import { InlineCellEditor } from "./InlineCellEditor";
-import { RecordContextMenu } from "./RecordContextMenu";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Plus, SearchX, Check, Paperclip, Trash2, X } from "lucide-react";
+
+import type { Catalogs, DataRecord, Field, FormSchema, RecordPage, ViewConfig } from "../../api/types";
+import { FieldIcon } from "../../components/Icons";
 import { ColumnMenu } from "../workspace/ColumnMenu";
+import { columnLayouts, visibleFields } from "../workspace/columns";
 import type { ColumnAction } from "../workspace/useFieldActions";
 import { ColumnResizeHandle } from "./ColumnResizeHandle";
-import { columnLayouts, visibleFields } from "../workspace/columns";
-import { groupValue, groupKey } from "./grouping";
-import { FieldIcon } from "../../components/Icons";
-import type { Catalogs, DataRecord, Field, FormSchema, RecordPage, ViewConfig } from "../../api/types";
+import { groupKey, groupValue } from "./grouping";
+import { InlineCellEditor } from "./InlineCellEditor";
+import { Rating } from "./Rating";
+import { RecordContextMenu } from "./RecordContextMenu";
+import { useRecordGrid } from "./useRecordGrid";
 import { displayValue, relationIds, titleOf } from "./values";
 export function RecordTable({
   schema,
@@ -89,14 +90,22 @@ export function RecordTable({
   const selectAll = useRef<HTMLInputElement>(null);
   const fields = visibleFields(schema, config);
   // Required fields stay reachable while an insertion is being completed.
-  if (draft) for (const f of schema.fields) if (f.required && !f.archived_at && !fields.some((v) => v.id === f.id)) fields.push(f);
+  if (draft) {
+    for (const f of schema.fields) {
+      if (f.required && !f.archived_at && !fields.some((v) => v.id === f.id)) {
+        fields.push(f);
+      }
+    }
+  }
   const layouts = columnLayouts(schema, config);
   const widthOf = (field: Field) => liveWidths[field.id] ?? layouts.find((c) => c.field_id === field.id)?.width ?? 156;
   function clearPreview(id: string) {
     setLiveWidths((old) => Object.fromEntries(Object.entries(old).filter(([key]) => key !== id)));
   }
   useEffect(() => {
-    if (selectAll.current) selectAll.current.indeterminate = chosen.length > 0 && !all;
+    if (selectAll.current) {
+      selectAll.current.indeterminate = chosen.length > 0 && !all;
+    }
   }, [chosen.length, all]);
 
   return (
@@ -177,7 +186,9 @@ export function RecordTable({
                 title={field.description || undefined}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  if (!active) setColumnMenu({ field, anchor: e.currentTarget.querySelector("button")!, x: e.clientX, y: e.clientY });
+                  if (!active) {
+                    setColumnMenu({ field, anchor: e.currentTarget.querySelector("button")!, x: e.clientX, y: e.clientY });
+                  }
                 }}
                 aria-sort={config.sort?.field_id === field.id ? (config.sort.descending ? "descending" : "ascending") : "none"}
               >
@@ -262,7 +273,9 @@ export function RecordTable({
                     className={`${selectedId === record.id || selected.includes(record.id) ? "selected" : ""} ${record.id === "draft" ? "draft-row" : ""}`}
                     aria-selected={selected.includes(record.id)}
                     onContextMenu={(event) => {
-                      if (record.id === "draft" || active) return;
+                      if (record.id === "draft" || active) {
+                        return;
+                      }
                       event.preventDefault();
                       setMenu({
                         record,
@@ -275,13 +288,14 @@ export function RecordTable({
                       if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
                         event.preventDefault();
                         const rect = event.target instanceof HTMLElement ? event.target.getBoundingClientRect() : null;
-                        if (rect && record.id !== "draft")
+                        if (rect && record.id !== "draft") {
                           setMenu({
                             record,
                             x: rect.left,
                             y: rect.bottom,
                             anchor: (event.target as HTMLElement).closest<HTMLElement>("button, input") ?? event.currentTarget,
                           });
+                        }
                       }
                     }}
                   >
@@ -418,7 +432,9 @@ function Cell({ field, record, catalogs }: { field: Field; record: DataRecord; c
       </span>
     );
   }
-  if (field.config.rating) return <Rating field={field} value={value} />;
+  if (field.config.rating) {
+    return <Rating field={field} value={value} />;
+  }
   if (field.type === "boolean") {
     return <span className={`boolean-cell ${value ? "checked" : ""}`}>{value ? <Check size={13} /> : "—"}</span>;
   }

@@ -12,7 +12,9 @@ export function FieldEditor({
   autoFocus: boolean;
 }) {
   const id = `field-${field.id}`;
-  if (field.config.rating) return <Rating field={field} value={value} onChange={onChange} />;
+  if (field.config.rating) {
+    return <Rating field={field} value={value} onChange={onChange} />;
+  }
   if (field.type === "boolean") {
     return (
       <label className="checkbox-control">

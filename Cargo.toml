@@ -4,7 +4,7 @@ default-members = ["crates/domain", "crates/persistence", "crates/server", "crat
 resolver = "2"
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 publish = false
 
@@ -24,3 +24,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "mul
 
 [profile.dev]
 debug = 1
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"

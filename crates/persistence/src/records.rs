@@ -10,12 +10,7 @@ impl Store {
             .bind(id).bind(actor.workspace_id).fetch_optional(&self.pool).await?.ok_or(StoreError::NotFound)?;
         decode(&row, "value")
     }
-    pub async fn records(
-        &self,
-        actor: Actor,
-        form_id: Uuid,
-        query: RecordQuery,
-    ) -> Result<RecordPage> {
+    pub async fn records(&self, actor: Actor, form_id: Uuid, query: RecordQuery) -> Result<RecordPage> {
         let schema = self.schema(actor, form_id).await?;
         let filters: Vec<Filter> = match query.filter.as_deref() {
             Some(s) => serde_json::from_str(s).map_err(|_| invalid("Malformed filter JSON."))?,
@@ -110,24 +105,14 @@ impl Store {
             next_cursor: (i64::from(next) < total).then_some(next),
         })
     }
-    pub async fn create_record(
-        &self,
-        actor: Actor,
-        form_id: Uuid,
-        input: CreateRecord,
-    ) -> Result<Record> {
+    pub async fn create_record(&self, actor: Actor, form_id: Uuid, input: CreateRecord) -> Result<Record> {
         let records = self.create_records(actor, form_id, vec![input]).await?;
         records
             .into_iter()
             .next()
             .ok_or_else(|| invalid("No record was created."))
     }
-    pub async fn create_records(
-        &self,
-        actor: Actor,
-        form_id: Uuid,
-        inputs: Vec<CreateRecord>,
-    ) -> Result<Vec<Record>> {
+    pub async fn create_records(&self, actor: Actor, form_id: Uuid, inputs: Vec<CreateRecord>) -> Result<Vec<Record>> {
         let mut tx = self.pool.begin().await?;
         Self::lock_form(&mut tx, actor, form_id).await?;
         let fields = self.fields(form_id).await?;
@@ -149,12 +134,7 @@ impl Store {
         }
         Ok(records)
     }
-    pub async fn insert_record(
-        &self,
-        actor: Actor,
-        anchor_id: Uuid,
-        input: InsertRecord,
-    ) -> Result<Record> {
+    pub async fn insert_record(&self, actor: Actor, anchor_id: Uuid, input: InsertRecord) -> Result<Record> {
         self.insert_relative(actor, anchor_id, input, None).await
     }
     /// Files are copied by the server before this atomic metadata operation.
@@ -197,11 +177,9 @@ impl Store {
                 .values
                 .iter()
                 .filter(|(id, _)| {
-                    fields.iter().any(|f| {
-                        f.id == **id
-                            && f.archived_at.is_none()
-                            && f.field_type != FieldType::Attachment
-                    })
+                    fields
+                        .iter()
+                        .any(|f| f.id == **id && f.archived_at.is_none() && f.field_type != FieldType::Attachment)
                 })
                 .map(|(id, value)| (*id, value.clone()))
                 .collect()
@@ -222,48 +200,37 @@ impl Store {
             .await?;
         let id = Uuid::new_v4();
         sqlx::query("INSERT INTO records(id,form_id,data,created_by,updated_by,position) VALUES($1,$2,$3,$4,$4,$5)")
-            .bind(id).bind(anchor.form_id).bind(encode(scalar_values(&fields, &values))?).bind(actor.user_id).bind(position).execute(&mut *tx).await?;
+            .bind(id)
+            .bind(anchor.form_id)
+            .bind(encode(scalar_values(&fields, &values))?)
+            .bind(actor.user_id)
+            .bind(position)
+            .execute(&mut *tx)
+            .await?;
         write_relations(&mut tx, actor, id, &fields, &values, &Values::new()).await?;
         if let Some(copies) = copies {
             let active: Vec<_> = anchor
                 .attachments
                 .iter()
-                .filter(|a| {
-                    fields
-                        .iter()
-                        .any(|f| f.id == a.field_id && f.archived_at.is_none())
-                })
+                .filter(|a| fields.iter().any(|f| f.id == a.field_id && f.archived_at.is_none()))
                 .collect();
-            if active.len() != copies.len()
-                || active
-                    .iter()
-                    .any(|a| !copies.iter().any(|(old, _)| *old == a.id))
-            {
-                return Err(invalid(
-                    "Attachments changed. Reload the record and try again.",
-                ));
+            if active.len() != copies.len() || active.iter().any(|a| !copies.iter().any(|(old, _)| *old == a.id)) {
+                return Err(invalid("Attachments changed. Reload the record and try again."));
             }
             for (old, new) in copies {
                 sqlx::query("INSERT INTO attachments(id,workspace_id,record_id,field_id,filename,content_type,size_bytes,sha256,storage_key,uploaded_by) SELECT $1,workspace_id,$2,field_id,filename,content_type,size_bytes,sha256,$3,$4 FROM attachments WHERE id=$5 AND record_id=$6")
                     .bind(new).bind(id).bind(new.to_string()).bind(actor.user_id).bind(old).bind(anchor_id).execute(&mut *tx).await?;
             }
         }
-        let row = sqlx::query(&format!(
-            "SELECT {RECORD_VALUE} AS value FROM records r WHERE r.id=$1"
-        ))
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
+        let row = sqlx::query(&format!("SELECT {RECORD_VALUE} AS value FROM records r WHERE r.id=$1"))
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
         let record = decode(&row, "value")?;
         tx.commit().await?;
         Ok(record)
     }
-    pub async fn update_record(
-        &self,
-        actor: Actor,
-        id: Uuid,
-        input: UpdateRecord,
-    ) -> Result<Record> {
+    pub async fn update_record(&self, actor: Actor, id: Uuid, input: UpdateRecord) -> Result<Record> {
         let current = self.record(actor, id).await?;
         let mut tx = self.pool.begin().await?;
         Self::lock_form(&mut tx, actor, current.form_id).await?;
@@ -278,16 +245,15 @@ impl Store {
         issues(validate_values(&fields, &merged, &current.attachments))?;
         write_relations(&mut tx, actor, id, &fields, &merged, &current.values).await?;
         sqlx::query("UPDATE records SET data=$2,version=version+1,updated_at=now(),updated_by=$3 WHERE id=$1")
-            .bind(id).bind(encode(scalar_values(&fields, &merged))?).bind(actor.user_id).execute(&mut *tx).await?;
+            .bind(id)
+            .bind(encode(scalar_values(&fields, &merged))?)
+            .bind(actor.user_id)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
         self.record(actor, id).await
     }
-    pub async fn archive_record(
-        &self,
-        actor: Actor,
-        id: Uuid,
-        expected_version: i32,
-    ) -> Result<()> {
+    pub async fn archive_record(&self, actor: Actor, id: Uuid, expected_version: i32) -> Result<()> {
         let current = self.record(actor, id).await?;
         let mut tx = self.pool.begin().await?;
         Self::lock_form(&mut tx, actor, current.form_id).await?;
@@ -307,24 +273,22 @@ impl Store {
                 "This record is referenced. Remove its references, or disable the option to preserve history.",
             ));
         }
-        sqlx::query("UPDATE records SET deleted_at=now(),version=version+1,updated_at=now(),updated_by=$2 WHERE id=$1").bind(id).bind(actor.user_id).execute(&mut *tx).await?;
+        sqlx::query("UPDATE records SET deleted_at=now(),version=version+1,updated_at=now(),updated_by=$2 WHERE id=$1")
+            .bind(id)
+            .bind(actor.user_id)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
         Ok(())
     }
-    pub async fn validate_record_input(
-        &self,
-        actor: Actor,
-        form_id: Uuid,
-        values: &Values,
-    ) -> Result<Vec<FieldIssue>> {
+    pub async fn validate_record_input(&self, actor: Actor, form_id: Uuid, values: &Values) -> Result<Vec<FieldIssue>> {
         let schema = self.schema(actor, form_id).await?;
         let mut result = validate_write_keys(&schema.fields, values);
         result.extend(validate_values(&schema.fields, values, &[]));
         let mut tx = self.pool.begin().await?;
         // Same relation checks as a write, rolled back after validation.
         if result.is_empty()
-            && let Err(error) =
-                check_relations(&mut tx, actor, &schema.fields, values, &Values::new()).await
+            && let Err(error) = check_relations(&mut tx, actor, &schema.fields, values, &Values::new()).await
         {
             match error {
                 StoreError::Validation(mut i) => result.append(&mut i),
@@ -341,10 +305,7 @@ fn scalar_values(fields: &[Field], values: &Values) -> BTreeMap<Uuid, Value> {
         .filter_map(|(id, value)| {
             fields
                 .iter()
-                .find(|f| {
-                    f.id == *id
-                        && !matches!(f.field_type, FieldType::Relation | FieldType::Attachment)
-                })
+                .find(|f| f.id == *id && !matches!(f.field_type, FieldType::Relation | FieldType::Attachment))
                 .map(|field| (*id, canonical_value(field, value)))
         })
         .collect()
@@ -377,18 +338,14 @@ async fn check_relations(
                     .get(&field.id)
                     .and_then(Value::as_array)
                     .is_some_and(|a| a.contains(value));
-                !was_assigned
-                    && enabled
-                        .is_some_and(|eid| data.get(eid.to_string()).is_some_and(|v| v == false))
+                !was_assigned && enabled.is_some_and(|eid| data.get(eid.to_string()).is_some_and(|v| v == false))
             } else {
                 true
             };
             if unavailable {
                 return Err(StoreError::Validation(vec![FieldIssue {
                     field_id: Some(field.id),
-                    message:
-                        "A related record is unavailable, disabled, or belongs to another form."
-                            .into(),
+                    message: "A related record is unavailable, disabled, or belongs to another form.".into(),
                 }]));
             }
         }
@@ -408,13 +365,11 @@ async fn write_relations(
         .iter()
         .filter(|f| f.field_type == FieldType::Relation && f.archived_at.is_none())
     {
-        sqlx::query(
-            "DELETE FROM record_relations WHERE source_record_id=$1 AND source_field_id=$2",
-        )
-        .bind(id)
-        .bind(field.id)
-        .execute(&mut **tx)
-        .await?;
+        sqlx::query("DELETE FROM record_relations WHERE source_record_id=$1 AND source_field_id=$2")
+            .bind(id)
+            .bind(field.id)
+            .execute(&mut **tx)
+            .await?;
         for (position, value) in values
             .get(&field.id)
             .and_then(Value::as_array)
@@ -445,10 +400,7 @@ fn push_scalar(qb: &mut QueryBuilder<'_, Postgres>, field: &Field) {
 }
 fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Filter) -> Result<()> {
     qb.push(" AND ");
-    if matches!(
-        field.field_type,
-        FieldType::Relation | FieldType::Attachment
-    ) {
+    if matches!(field.field_type, FieldType::Relation | FieldType::Attachment) {
         let (table, fk) = if field.field_type == FieldType::Relation {
             ("record_relations", "source_record_id")
         } else {
@@ -456,9 +408,7 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
         };
         let empty_check = matches!(filter.op, FilterOp::Empty | FilterOp::NotEmpty);
         if field.field_type == FieldType::Attachment && !empty_check {
-            return Err(invalid(
-                "Attachment fields support empty or not-empty filters.",
-            ));
+            return Err(invalid("Attachment fields support empty or not-empty filters."));
         }
         if matches!(filter.op, FilterOp::Empty | FilterOp::Ne | FilterOp::NoneOf) {
             qb.push("NOT ");
@@ -466,9 +416,10 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
         let ids: Vec<Uuid> = if empty_check {
             vec![]
         } else if matches!(filter.op, FilterOp::AnyOf | FilterOp::NoneOf) {
-            let values = filter.value.as_array().ok_or(invalid(
-                "Relation list filters need an array of record UUIDs.",
-            ))?;
+            let values = filter
+                .value
+                .as_array()
+                .ok_or(invalid("Relation list filters need an array of record UUIDs."))?;
             if values.is_empty() || values.len() > 100 {
                 return Err(invalid("Choose between 1 and 100 related records."));
             }
@@ -509,9 +460,7 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
             .push("=")
             .push_bind(field.id);
         if !empty_check {
-            qb.push(" AND x.target_record_id = ANY(")
-                .push_bind(ids)
-                .push(")");
+            qb.push(" AND x.target_record_id = ANY(").push_bind(ids).push(")");
         }
         qb.push(")");
     } else if matches!(filter.op, FilterOp::Empty | FilterOp::NotEmpty) {
@@ -532,10 +481,7 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
         ) {
             return Err(invalid("Contains is available on text fields."));
         }
-        let value = filter
-            .value
-            .as_str()
-            .ok_or(invalid("Contains needs text."))?;
+        let value = filter.value.as_str().ok_or(invalid("Contains needs text."))?;
         qb.push("position(")
             .push_bind(value.to_lowercase())
             .push(" in lower(r.data->>")
@@ -556,12 +502,8 @@ fn append_filter(qb: &mut QueryBuilder<'_, Postgres>, field: &Field, filter: Fil
         if filter.value.is_null() {
             return Err(invalid("Use the empty operator for empty values."));
         }
-        if field.field_type == FieldType::Boolean
-            && !matches!(filter.op, FilterOp::Eq | FilterOp::Ne)
-        {
-            return Err(invalid(
-                "Boolean fields support equals, not-equals, or empty checks.",
-            ));
+        if field.field_type == FieldType::Boolean && !matches!(filter.op, FilterOp::Eq | FilterOp::Ne) {
+            return Err(invalid("Boolean fields support equals, not-equals, or empty checks."));
         }
         push_scalar(qb, field);
         qb.push(match filter.op {
@@ -594,11 +536,9 @@ fn push_group(qb: &mut QueryBuilder<'_, Postgres>, field: &Field) {
             qb.push("coalesce((SELECT jsonb_agg(target_record_id ORDER BY target_record_id) FROM record_relations WHERE source_record_id=r.id AND source_field_id=").push_bind(field.id).push("),'[]'::jsonb)");
         }
         FieldType::Attachment => {
-            qb.push(
-                "to_jsonb((SELECT count(*) FROM attachments WHERE record_id=r.id AND field_id=",
-            )
-            .push_bind(field.id)
-            .push("))");
+            qb.push("to_jsonb((SELECT count(*) FROM attachments WHERE record_id=r.id AND field_id=")
+                .push_bind(field.id)
+                .push("))");
         }
         _ => {
             qb.push("coalesce(nullif(r.data->")

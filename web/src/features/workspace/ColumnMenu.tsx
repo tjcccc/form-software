@@ -1,5 +1,3 @@
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   AlignLeft,
   ArrowDown,
@@ -9,14 +7,17 @@ import {
   Check,
   Copy,
   ExternalLink,
+  EyeOff,
   Filter,
   Group,
-  EyeOff,
+  type LucideIcon,
   Pencil,
   Pin,
   Trash2,
-  type LucideIcon,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
 import type { Field, ViewConfig } from "../../api/types";
 import type { ColumnAction } from "./useFieldActions";
 export function ColumnMenu({
@@ -43,11 +44,15 @@ export function ColumnMenu({
   useEffect(() => {
     ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
     const outside = (e: Event) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
+      if (!ref.current?.contains(e.target as Node)) {
+        onClose();
+      }
     };
     const origin = anchor.getBoundingClientRect();
     const move = (e: Event) => {
-      if (ref.current?.contains(e.target as Node)) return;
+      if (ref.current?.contains(e.target as Node)) {
+        return;
+      }
       if (!anchor.isConnected) {
         onClose();
         return;

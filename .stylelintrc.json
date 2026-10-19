@@ -1,0 +1,37 @@
+{
+  "extends": ["stylelint-config-standard"],
+  "ignoreFiles": [
+    "**/node_modules/**",
+    "**/target/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/output/**",
+    "**/.local/**",
+    "**/.playwright-cli/**",
+    "**/.{claude,codex,agents,opencode,pi,cursor}/**"
+  ],
+  "rules": {
+    "max-nesting-depth": 2,
+    "selector-max-compound-selectors": 3,
+    "selector-max-id": 0,
+    "selector-max-specificity": "0,3,0"
+  },
+  "overrides": [
+    {
+      "files": ["web/src/styles/{app,editors,table,tokens}.css"],
+      "rules": { "no-descending-specificity": null }
+    },
+    {
+      "files": ["web/src/styles/editors.css"],
+      "rules": { "selector-max-specificity": "0,3,1" }
+    },
+    {
+      "files": ["web/src/styles/tokens.css"],
+      "rules": { "selector-max-specificity": "0,4,0" }
+    },
+    {
+      "files": ["web/src/styles/table.css"],
+      "rules": { "selector-max-specificity": "0,4,1", "selector-max-compound-selectors": 4 }
+    }
+  ]
+}

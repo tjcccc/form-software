@@ -1,6 +1,6 @@
+import { ArrowDown, ArrowUp, Copy, Expand, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, ArrowUp, Copy, Expand, Trash2 } from "lucide-react";
 export type RecordAction = "open" | "above" | "below" | "duplicate" | "delete";
 export function RecordContextMenu({
   x,
@@ -17,10 +17,14 @@ export function RecordContextMenu({
   useEffect(() => {
     ref.current?.querySelector<HTMLButtonElement>("button")?.focus();
     const close = (event: Event) => {
-      if (!ref.current?.contains(event.target as Node)) onClose();
+      if (!ref.current?.contains(event.target as Node)) {
+        onClose();
+      }
     };
     const scroll = (event: Event) => {
-      if (!ref.current?.contains(event.target as Node)) onClose();
+      if (!ref.current?.contains(event.target as Node)) {
+        onClose();
+      }
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("scroll", scroll, true);

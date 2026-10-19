@@ -58,8 +58,7 @@ impl Render for Desktop {
                             if !app.busy && !app.dirty(cx) {
                                 app.load(id, window, cx);
                             } else {
-                                app.status =
-                                    "Close or save the record before changing forms.".into();
+                                app.status = "Close or save the record before changing forms.".into();
                                 cx.notify();
                             }
                         }))
@@ -116,18 +115,14 @@ impl Render for Desktop {
                                     Button::new("refresh")
                                         .label("Refresh")
                                         .disabled(self.busy || self.editing.is_some())
-                                        .on_click(cx.listener(move |app, _, window, cx| {
-                                            app.load(form_id, window, cx)
-                                        })),
+                                        .on_click(cx.listener(move |app, _, window, cx| app.load(form_id, window, cx))),
                                 )
                                 .child(
                                     Button::new("new")
                                         .primary()
                                         .label("+ New record")
                                         .disabled(self.busy || self.editing.is_some())
-                                        .on_click(cx.listener(|app, _, window, cx| {
-                                            app.inspect(None, window, cx)
-                                        })),
+                                        .on_click(cx.listener(|app, _, window, cx| app.inspect(None, window, cx))),
                                 ),
                         ),
                 );
@@ -224,9 +219,7 @@ impl Render for Desktop {
                                         .ghost()
                                         .label("Close")
                                         .disabled(self.busy)
-                                        .on_click(cx.listener(|app, _, window, cx| {
-                                            app.close_inspector(window, cx)
-                                        })),
+                                        .on_click(cx.listener(|app, _, window, cx| app.close_inspector(window, cx))),
                                 ),
                         )
                         .child(
@@ -249,11 +242,7 @@ impl Render for Desktop {
                         .child(
                             Button::new("save")
                                 .primary()
-                                .label(if self.busy {
-                                    "Saving…"
-                                } else {
-                                    "Save record"
-                                })
+                                .label(if self.busy { "Saving…" } else { "Save record" })
                                 .disabled(self.busy)
                                 .on_click(cx.listener(|app, _, window, cx| app.save(window, cx))),
                         ),

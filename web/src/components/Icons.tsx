@@ -1,7 +1,6 @@
 import {
   AlignLeft,
   ArrowDownUp,
-  Star,
   BookOpen,
   BriefcaseBusiness,
   Building2,
@@ -10,16 +9,18 @@ import {
   Clock3,
   Folder,
   Gamepad2,
+  Globe2,
   Hash,
   Link2,
   ListFilter,
   Paperclip,
+  Star,
   Table2,
   Tag,
   Text,
   Type,
-  Globe2,
 } from "lucide-react";
+
 import type { Field, FieldType } from "../api/types";
 const formIcons = {
   table: Table2,

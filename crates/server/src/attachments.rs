@@ -110,10 +110,7 @@ pub async fn remove(
     ApiJson(input): ApiJson<VersionCheck>,
 ) -> HttpResult<Json<Record>> {
     let (_, key) = s.store.attachment(a, id).await?;
-    let record = s
-        .store
-        .remove_attachment(a, id, input.expected_version)
-        .await?;
+    let record = s.store.remove_attachment(a, id, input.expected_version).await?;
     // Deletion is committed first; unreachable files can be safely reconciled later.
     if let Err(error) = tokio::fs::remove_file(s.config.storage.join(key)).await {
         tracing::warn!("Attachment cleanup failed: {error}");
@@ -144,11 +141,7 @@ pub async fn duplicate(
             let (_, key) = s.store.attachment(a, attachment.id).await?;
             let new = Uuid::new_v4();
             copies.push((attachment.id, new));
-            tokio::fs::copy(
-                s.config.storage.join(key),
-                s.config.storage.join(new.to_string()),
-            )
-            .await?;
+            tokio::fs::copy(s.config.storage.join(key), s.config.storage.join(new.to_string())).await?;
         }
         Ok(s.store
             .duplicate_record(a, id, input.expected_version, copies.clone())
@@ -159,9 +152,7 @@ pub async fn duplicate(
         Ok(record) => Ok((axum::http::StatusCode::CREATED, Json(record))),
         Err(error) => {
             for (_, new) in copies {
-                if let Err(cleanup) =
-                    tokio::fs::remove_file(s.config.storage.join(new.to_string())).await
-                {
+                if let Err(cleanup) = tokio::fs::remove_file(s.config.storage.join(new.to_string())).await {
                     tracing::warn!("Duplicate cleanup failed: {cleanup}");
                 }
             }
@@ -182,11 +173,7 @@ pub async fn duplicate_field(
         for (old, key) in files {
             let new = Uuid::new_v4();
             copies.push((old, new));
-            tokio::fs::copy(
-                s.config.storage.join(key),
-                s.config.storage.join(new.to_string()),
-            )
-            .await?;
+            tokio::fs::copy(s.config.storage.join(key), s.config.storage.join(new.to_string())).await?;
         }
         Ok(s.store.duplicate_field(a, id, copies.clone()).await?)
     }
@@ -195,9 +182,7 @@ pub async fn duplicate_field(
         Ok(field) => Ok((axum::http::StatusCode::CREATED, Json(field))),
         Err(error) => {
             for (_, new) in copies {
-                if let Err(cleanup) =
-                    tokio::fs::remove_file(s.config.storage.join(new.to_string())).await
-                {
+                if let Err(cleanup) = tokio::fs::remove_file(s.config.storage.join(new.to_string())).await {
                     tracing::warn!("Field copy cleanup failed: {cleanup}");
                 }
             }

@@ -1,8 +1,9 @@
+import { Check, ChevronDown, Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { initialValues } from "./values";
-import { Check, Plus, ChevronDown, Search, X } from "lucide-react";
-import { api, aborted, message } from "../../api/client";
+
+import { aborted, api, message } from "../../api/client";
 import type { DataRecord, Field, RelationCatalog } from "../../api/types";
+import { initialValues } from "./values";
 import { relationIds, titleOf } from "./values";
 export function RelationPicker({
   field,
@@ -68,14 +69,18 @@ export function RelationPicker({
     }
   }
   async function quickAdd() {
-    if (!target || creating || resultQuery !== query || !query.trim()) return;
+    if (!target || creating || resultQuery !== query || !query.trim()) {
+      return;
+    }
     setCreating(true);
     onBusyChange?.(true);
     setError("");
     try {
       const schema = catalog?.schema ?? (await api.schema(target));
       const primary = schema.fields.find((f) => f.key === "name" && !f.archived_at);
-      if (!primary) throw new Error("Open the linked form to add this record.");
+      if (!primary) {
+        throw new Error("Open the linked form to add this record.");
+      }
       const record = await api.createRecord(target, { ...initialValues(schema), [primary.id]: query.trim() });
       choose(record);
       setOptions((old) => [record, ...old]);

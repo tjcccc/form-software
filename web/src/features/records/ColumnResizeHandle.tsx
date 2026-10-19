@@ -17,20 +17,26 @@ export function ColumnResizeHandle({
   const gesture = useRef<{ startX: number; original: number; width: number; pointerId?: number } | undefined>(undefined);
   const [dragging, setDragging] = useState(false);
   useEffect(() => {
-    if (!dragging) return;
+    if (!dragging) {
+      return;
+    }
     document.documentElement.classList.add("resizing-column");
     return () => document.documentElement.classList.remove("resizing-column");
   }, [dragging]);
   function preview(value: number) {
     const next = Math.min(800, Math.max(100, Math.round(value)));
-    if (gesture.current) gesture.current.width = next;
+    if (gesture.current) {
+      gesture.current.width = next;
+    }
     onPreview(next);
   }
   function finish(cancel = false) {
     const current = gesture.current;
     gesture.current = undefined;
     setDragging(false);
-    if (current && !cancel && current.width !== current.original) onCommit(current.width);
+    if (current && !cancel && current.width !== current.original) {
+      onCommit(current.width);
+    }
     onCancel();
   }
   return (
@@ -54,7 +60,9 @@ export function ColumnResizeHandle({
         e.stopPropagation();
       }}
       onPointerDown={(e) => {
-        if (disabled || e.button !== 0) return;
+        if (disabled || e.button !== 0) {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         e.currentTarget.focus({ preventScroll: true });
@@ -63,7 +71,9 @@ export function ColumnResizeHandle({
         setDragging(true);
       }}
       onPointerMove={(e) => {
-        if (gesture.current?.pointerId === e.pointerId) preview(gesture.current.original + e.clientX - gesture.current.startX);
+        if (gesture.current?.pointerId === e.pointerId) {
+          preview(gesture.current.original + e.clientX - gesture.current.startX);
+        }
       }}
       onPointerUp={(e) => {
         if (gesture.current?.pointerId === e.pointerId) {
@@ -73,7 +83,9 @@ export function ColumnResizeHandle({
       }}
       onPointerCancel={() => finish(true)}
       onLostPointerCapture={() => {
-        if (gesture.current?.pointerId !== undefined) finish(true);
+        if (gesture.current?.pointerId !== undefined) {
+          finish(true);
+        }
       }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
@@ -82,7 +94,9 @@ export function ColumnResizeHandle({
           finish(true);
           return;
         }
-        if (disabled || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+        if (disabled || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         gesture.current ??= { startX: 0, original: width, width };
@@ -95,10 +109,14 @@ export function ColumnResizeHandle({
         );
       }}
       onKeyUp={(e) => {
-        if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key) && gesture.current?.pointerId === undefined) finish();
+        if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key) && gesture.current?.pointerId === undefined) {
+          finish();
+        }
       }}
       onBlur={() => {
-        if (gesture.current && gesture.current.pointerId === undefined) finish();
+        if (gesture.current && gesture.current.pointerId === undefined) {
+          finish();
+        }
       }}
     />
   );

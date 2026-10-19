@@ -38,16 +38,11 @@ pub struct Desktop {
 }
 impl Desktop {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let server =
-            std::env::var("FORM_SERVER").unwrap_or_else(|_| "http://127.0.0.1:3141".into());
+        let server = std::env::var("FORM_SERVER").unwrap_or_else(|_| "http://127.0.0.1:3141".into());
         let mut app = Self {
             server: input(&server, "Server origin", false, window, cx),
             username: input("owner", "Username", false, window, cx),
-            password: cx.new(|cx| {
-                InputState::new(window, cx)
-                    .masked(true)
-                    .placeholder("Password")
-            }),
+            password: cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("Password")),
             client: None,
             session: None,
             forms: vec![],
@@ -86,8 +81,7 @@ impl Desktop {
                                 app.client = Some(client);
                                 app.session = Some(session);
                                 app.forms = forms;
-                                app.password
-                                    .update(cx, |state, cx| state.set_value("", window, cx));
+                                app.password.update(cx, |state, cx| state.set_value("", window, cx));
                                 if let Some(id) = app
                                     .forms
                                     .iter()
@@ -97,8 +91,7 @@ impl Desktop {
                                 {
                                     app.load(id, window, cx);
                                 } else {
-                                    app.status =
-                                        "Create a form in the web workspace to get started.".into();
+                                    app.status = "Create a form in the web workspace to get started.".into();
                                 }
                             }
                             Ok(Job::Loaded(schema, page)) => {
@@ -106,19 +99,15 @@ impl Desktop {
                                 app.records = page.records;
                                 app.editing = None;
                                 app.editors.clear();
-                                app.status =
-                                    format!("{} records · connected to the shared API", page.total);
+                                app.status = format!("{} records · connected to the shared API", page.total);
                             }
                             Ok(Job::Saved(record)) => {
-                                if let Some(index) =
-                                    app.records.iter().position(|r| r.id == record.id)
-                                {
+                                if let Some(index) = app.records.iter().position(|r| r.id == record.id) {
                                     app.records[index] = record.clone();
                                 } else {
                                     app.records.insert(0, record.clone());
                                 }
-                                app.status =
-                                    format!("Saved through the API · version {}", record.version);
+                                app.status = format!("Saved through the API · version {}", record.version);
                                 app.editing = Some(Some(record));
                             }
                             Err(error) => {
@@ -131,13 +120,7 @@ impl Desktop {
             })
             .detach();
     }
-    fn sign_in_token(
-        &mut self,
-        server: String,
-        token: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn sign_in_token(&mut self, server: String, token: String, window: &mut Window, cx: &mut Context<Self>) {
         self.job(window, cx, move || {
             let client = Client::new(&server, Some(token))?;
             let session = client.session()?;
@@ -200,19 +183,12 @@ impl Desktop {
                 };
                 Editor {
                     field: field.clone(),
-                    input: input(
-                        &text,
-                        &field.name,
-                        field.field_type == FieldType::LongText,
-                        window,
-                        cx,
-                    ),
+                    input: input(&text, &field.name, field.field_type == FieldType::LongText, window, cx),
                 }
             })
             .collect();
         self.editing = Some(record);
-        self.status =
-            "Edit fields, then save. Relations accept a JSON array of record UUIDs.".into();
+        self.status = "Edit fields, then save. Relations accept a JSON array of record UUIDs.".into();
         cx.notify();
     }
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -226,20 +202,16 @@ impl Desktop {
                 Value::Null
             } else {
                 match editor.field.field_type {
-                    FieldType::Integer
-                    | FieldType::Duration
-                    | FieldType::Boolean
-                    | FieldType::Relation => match serde_json::from_str(&text) {
-                        Ok(v) => v,
-                        Err(_) => {
-                            self.status = format!(
-                                "{}: enter valid JSON for this field type.",
-                                editor.field.name
-                            );
-                            cx.notify();
-                            return;
+                    FieldType::Integer | FieldType::Duration | FieldType::Boolean | FieldType::Relation => {
+                        match serde_json::from_str(&text) {
+                            Ok(v) => v,
+                            Err(_) => {
+                                self.status = format!("{}: enter valid JSON for this field type.", editor.field.name);
+                                cx.notify();
+                                return;
+                            }
                         }
-                    },
+                    }
                     _ => json!(text),
                 }
             };

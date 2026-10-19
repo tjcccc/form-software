@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, FilePlus2, LoaderCircle, Paperclip, Save, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+
 import { api, ApiError, message } from "../../api/client";
 import type { Catalogs, DataRecord, Field, FormSchema, Values } from "../../api/types";
-import { FieldIcon } from "../../components/Icons";
 import { ErrorNotice } from "../../components/Dialog";
-import { initialValues, titleOf } from "./values";
+import { FieldIcon } from "../../components/Icons";
 import { FieldEditor } from "./FieldEditor";
 import { RelationPicker } from "./RelationPicker";
+import { initialValues, titleOf } from "./values";
 export function RecordInspector({
   schema,
   initial,

@@ -50,8 +50,12 @@ export function displayValue(field: Field, value: unknown, catalogs: Catalogs): 
   if (field.type === "boolean") {
     return value ? "Yes" : "No";
   }
-  if (field.config.rating) return `${value} / ${field.config.rating.max}`;
-  if (field.type === "integer" || field.type === "decimal") return formatNumber(field, value);
+  if (field.config.rating) {
+    return `${value} / ${field.config.rating.max}`;
+  }
+  if (field.type === "integer" || field.type === "decimal") {
+    return formatNumber(field, value);
+  }
   return String(value);
 }
 export function initialValues(schema: FormSchema): Values {

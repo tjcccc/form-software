@@ -51,13 +51,13 @@ impl Store {
             workspace: decode(&row, "ws")?,
         })
     }
-    pub(crate) async fn lock_form(
-        tx: &mut Transaction<'_, Postgres>,
-        actor: Actor,
-        form_id: Uuid,
-    ) -> Result<()> {
+    pub(crate) async fn lock_form(tx: &mut Transaction<'_, Postgres>, actor: Actor, form_id: Uuid) -> Result<()> {
         sqlx::query("SELECT id FROM forms WHERE id=$1 AND workspace_id=$2 AND archived_at IS NULL FOR UPDATE")
-            .bind(form_id).bind(actor.workspace_id).fetch_optional(&mut **tx).await?.ok_or(StoreError::NotFound)?;
+            .bind(form_id)
+            .bind(actor.workspace_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or(StoreError::NotFound)?;
         Ok(())
     }
 }

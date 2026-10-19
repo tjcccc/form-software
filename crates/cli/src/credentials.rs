@@ -1,11 +1,8 @@
 use form_api_client::{ClientError, Result};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn entry(server: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new("FormSoftware", server.trim_end_matches('/')).map_err(|e| {
-        ClientError::Invalid(format!(
-            "Credential store unavailable: {e}. Supply FORM_TOKEN instead."
-        ))
-    })
+    keyring::Entry::new("FormSoftware", server.trim_end_matches('/'))
+        .map_err(|e| ClientError::Invalid(format!("Credential store unavailable: {e}. Supply FORM_TOKEN instead.")))
 }
 pub fn save(server: &str, token: &str) -> Result<()> {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -19,7 +16,9 @@ pub fn save(server: &str, token: &str) -> Result<()> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (server, token);
-        Err(ClientError::Invalid("Persistent login currently supports macOS and Windows. Supply FORM_TOKEN on this platform.".into()))
+        Err(ClientError::Invalid(
+            "Persistent login currently supports macOS and Windows. Supply FORM_TOKEN on this platform.".into(),
+        ))
     }
 }
 pub fn load(server: &str) -> Result<String> {
@@ -30,15 +29,13 @@ pub fn load(server: &str) -> Result<String> {
     }
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
-        entry(server)?.get_password().map_err(|_| {
-            ClientError::Invalid("Sign in with formsw login, or supply FORM_TOKEN.".into())
-        })
+        entry(server)?
+            .get_password()
+            .map_err(|_| ClientError::Invalid("Sign in with formsw login, or supply FORM_TOKEN.".into()))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = server;
-        Err(ClientError::Invalid(
-            "Supply FORM_TOKEN on this platform.".into(),
-        ))
+        Err(ClientError::Invalid("Supply FORM_TOKEN on this platform.".into()))
     }
 }

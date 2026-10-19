@@ -10,10 +10,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 #[utoipa::path(get,path="/api/v1/forms",responses((status=200,body=Vec<Form>)))]
-pub async fn forms(
-    State(s): State<Arc<AppState>>,
-    Extension(a): Extension<Actor>,
-) -> HttpResult<Json<Vec<Form>>> {
+pub async fn forms(State(s): State<Arc<AppState>>, Extension(a): Extension<Actor>) -> HttpResult<Json<Vec<Form>>> {
     Ok(Json(s.store.forms(a).await?))
 }
 #[utoipa::path(post,path="/api/v1/forms",request_body=CreateForm,responses((status=201,body=FormSchema)))]
@@ -22,10 +19,7 @@ pub async fn create_form(
     Extension(a): Extension<Actor>,
     ApiJson(input): ApiJson<CreateForm>,
 ) -> HttpResult<(StatusCode, Json<FormSchema>)> {
-    Ok((
-        StatusCode::CREATED,
-        Json(s.store.create_form(a, input).await?),
-    ))
+    Ok((StatusCode::CREATED, Json(s.store.create_form(a, input).await?)))
 }
 #[utoipa::path(get,path="/api/v1/forms/{form_id}/schema",params(("form_id"=Uuid,Path)),responses((status=200,body=FormSchema)))]
 pub async fn schema(
@@ -51,10 +45,7 @@ pub async fn create_field(
     Path(id): Path<Uuid>,
     ApiJson(input): ApiJson<CreateField>,
 ) -> HttpResult<(StatusCode, Json<Field>)> {
-    Ok((
-        StatusCode::CREATED,
-        Json(s.store.create_field(a, id, input).await?),
-    ))
+    Ok((StatusCode::CREATED, Json(s.store.create_field(a, id, input).await?)))
 }
 #[utoipa::path(patch,path="/api/v1/fields/{field_id}",params(("field_id"=Uuid,Path)),request_body=UpdateField,responses((status=200,body=Field)))]
 pub async fn update_field(
@@ -81,10 +72,7 @@ pub async fn create_record(
     Path(id): Path<Uuid>,
     ApiJson(input): ApiJson<CreateRecord>,
 ) -> HttpResult<(StatusCode, Json<Record>)> {
-    Ok((
-        StatusCode::CREATED,
-        Json(s.store.create_record(a, id, input).await?),
-    ))
+    Ok((StatusCode::CREATED, Json(s.store.create_record(a, id, input).await?)))
 }
 #[utoipa::path(get,path="/api/v1/records/{record_id}",params(("record_id"=Uuid,Path)),responses((status=200,body=Record)))]
 pub async fn record(
@@ -110,9 +98,7 @@ pub async fn archive_record(
     Path(id): Path<Uuid>,
     ApiJson(input): ApiJson<VersionCheck>,
 ) -> HttpResult<StatusCode> {
-    s.store
-        .archive_record(a, id, input.expected_version)
-        .await?;
+    s.store.archive_record(a, id, input.expected_version).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 #[utoipa::path(get,path="/api/v1/forms/{form_id}/views",params(("form_id"=Uuid,Path)),responses((status=200,body=Vec<View>)))]
@@ -140,10 +126,7 @@ pub async fn insert_record(
     Path(id): Path<Uuid>,
     ApiJson(input): ApiJson<InsertRecord>,
 ) -> HttpResult<(StatusCode, Json<Record>)> {
-    Ok((
-        StatusCode::CREATED,
-        Json(s.store.insert_record(a, id, input).await?),
-    ))
+    Ok((StatusCode::CREATED, Json(s.store.insert_record(a, id, input).await?)))
 }
 
 #[utoipa::path(patch,path="/api/v1/views/{view_id}/columns/{field_id}/width",params(("view_id"=Uuid,Path),("field_id"=Uuid,Path)),request_body=UpdateColumnWidth,responses((status=200,body=View),(status=404,body=ApiError),(status=422,body=ApiError)))]
@@ -153,9 +136,5 @@ pub async fn update_column_width(
     Path((view_id, field_id)): Path<(Uuid, Uuid)>,
     ApiJson(input): ApiJson<UpdateColumnWidth>,
 ) -> HttpResult<Json<View>> {
-    Ok(Json(
-        s.store
-            .update_column_width(a, view_id, field_id, input)
-            .await?,
-    ))
+    Ok(Json(s.store.update_column_width(a, view_id, field_id, input).await?))
 }

@@ -6,3 +6,4 @@
 - Generate contracts with `pnpm contracts`; do not hand-edit `contracts/openapi.json` or `web/src/api/schema.d.ts`.
 - Local `formsoftware_dev` and SQLx-created test databases on port 55437 are disposable fixtures. Never point `test:api` or `backup:check` at real data.
 - Default checks are `pnpm check`, `pnpm build`, `cargo check`, and affected domain/API tests. Native needs macOS/Xcode; keep native checks outside default Linux CI.
+- Run `pnpm lint` or `pnpm lint:fix` on demand; do not add lint hooks or CI enforcement.

@@ -2,18 +2,9 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use uuid::Uuid;
 #[derive(Parser)]
-#[command(
-    name = "formsw",
-    version,
-    about = "Structured records, from your terminal."
-)]
+#[command(name = "formsw", version, about = "Structured records, from your terminal.")]
 pub(crate) struct Cli {
-    #[arg(
-        long,
-        env = "FORM_SERVER",
-        default_value = "http://127.0.0.1:3141",
-        global = true
-    )]
+    #[arg(long, env = "FORM_SERVER", default_value = "http://127.0.0.1:3141", global = true)]
     pub(crate) server: String,
     #[arg(long, global = true)]
     pub(crate) json: bool,

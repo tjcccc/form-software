@@ -1,6 +1,7 @@
+import { Check, Paperclip, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { Check, Paperclip, Trash2, X } from "lucide-react";
+
 import { api, ApiError, message } from "../../api/client";
 import type { Catalogs, DataRecord, Field } from "../../api/types";
 import { FieldEditor } from "./FieldEditor";
@@ -37,7 +38,9 @@ export function InlineCellEditor({
   const width = Math.min(window.innerWidth - 16, expanded ? Math.max(rect.width, 330) : rect.width);
 
   async function save() {
-    if (locked.current || conflict) return false;
+    if (locked.current || conflict) {
+      return false;
+    }
     if (!dirty || field.type === "attachment") {
       flushSync(onClose);
       return true;
@@ -55,7 +58,9 @@ export function InlineCellEditor({
       return true;
     } catch (e) {
       setError(e instanceof ApiError && e.body.issues.length ? e.body.issues.map((i) => i.message).join(" ") : message(e));
-      if (e instanceof ApiError && e.body.current) setConflict(e.body.current as DataRecord);
+      if (e instanceof ApiError && e.body.current) {
+        setConflict(e.body.current as DataRecord);
+      }
       return false;
     } finally {
       locked.current = false;
@@ -75,21 +80,31 @@ export function InlineCellEditor({
     const input =
       ref.current?.querySelector<HTMLElement>("input:not([type=file]), textarea") ?? ref.current?.querySelector<HTMLElement>("button");
     input?.focus();
-    if (input instanceof HTMLInputElement && ["text", "url", "number"].includes(input.type)) input.select();
+    if (input instanceof HTMLInputElement && ["text", "url", "number"].includes(input.type)) {
+      input.select();
+    }
   }, []);
   useEffect(() => {
-    if (error && !busy) ref.current?.querySelector<HTMLElement>(conflict ? "button:not(:disabled)" : "input, textarea, button")?.focus();
+    if (error && !busy) {
+      ref.current?.querySelector<HTMLElement>(conflict ? "button:not(:disabled)" : "input, textarea, button")?.focus();
+    }
   }, [error, busy, conflict]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape") {
+        return;
+      }
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (!locked.current) onClose();
+      if (!locked.current) {
+        onClose();
+      }
     };
     document.addEventListener("keydown", escape, true);
     const outside = (event: MouseEvent) => {
-      if (ref.current?.contains(event.target as Node)) return;
+      if (ref.current?.contains(event.target as Node)) {
+        return;
+      }
       // Finish this write before activating another cell, preserving failed drafts.
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -98,19 +113,25 @@ export function InlineCellEditor({
       void save().then((ok) => {
         if (ok && target?.isConnected) {
           target.focus();
-          if (context)
+          if (context) {
             target.dispatchEvent(
               new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: event.clientX, clientY: event.clientY }),
             );
-          else target.click();
+          } else {
+            target.click();
+          }
         }
       });
     };
     const navigate = (event: Event) => {
-      if (dirty || busy) event.preventDefault();
+      if (dirty || busy) {
+        event.preventDefault();
+      }
     };
     const unload = (event: BeforeUnloadEvent) => {
-      if (dirty || busy) event.preventDefault();
+      if (dirty || busy) {
+        event.preventDefault();
+      }
     };
     document.addEventListener("click", outside, true);
     document.addEventListener("contextmenu", outside, true);
@@ -125,7 +146,9 @@ export function InlineCellEditor({
     };
   });
   async function attachment(action: () => Promise<DataRecord>) {
-    if (locked.current) return;
+    if (locked.current) {
+      return;
+    }
     locked.current = true;
     setBusy(true);
     setError("");
@@ -135,7 +158,9 @@ export function InlineCellEditor({
       onSaved(next);
     } catch (e) {
       setError(message(e));
-      if (e instanceof ApiError && e.body.current) setConflict(e.body.current as DataRecord);
+      if (e instanceof ApiError && e.body.current) {
+        setConflict(e.body.current as DataRecord);
+      }
     } finally {
       locked.current = false;
       setBusy(false);
@@ -207,7 +232,9 @@ export function InlineCellEditor({
                     className="icon-button"
                     aria-label={`Remove ${a.filename}`}
                     onClick={() => {
-                      if (window.confirm(`Remove ${a.filename}?`)) void attachment(() => api.removeAttachment(record, a.id));
+                      if (window.confirm(`Remove ${a.filename}?`)) {
+                        void attachment(() => api.removeAttachment(record, a.id));
+                      }
                     }}
                   >
                     <Trash2 size={13} />
@@ -224,7 +251,9 @@ export function InlineCellEditor({
                   className="sr-only"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    if (file) void attachment(() => api.upload(record, field.id, file));
+                    if (file) {
+                      void attachment(() => api.upload(record, field.id, file));
+                    }
                     e.target.value = "";
                   }}
                 />

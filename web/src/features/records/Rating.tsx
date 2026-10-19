@@ -1,4 +1,5 @@
 import { Circle, Flag, Heart, Star, ThumbsUp } from "lucide-react";
+
 import type { Field } from "../../api/types";
 const icons = { star: Star, heart: Heart, thumbs_up: ThumbsUp, flag: Flag, circle: Circle };
 export function Rating({ field, value, onChange }: { field: Field; value: unknown; onChange?: (value: unknown) => void }) {
@@ -6,7 +7,7 @@ export function Rating({ field, value, onChange }: { field: Field; value: unknow
   const Icon = icons[rating.icon];
   const score = typeof value === "number" ? value : 0;
   const symbols = Array.from({ length: rating.max }, (_, index) => index + 1);
-  if (!onChange)
+  if (!onChange) {
     return (
       <span className={`rating rating-${rating.color}`} aria-label={`${score} of ${rating.max}`} title={`${score} / ${rating.max}`}>
         {symbols.map((n) => (
@@ -14,6 +15,7 @@ export function Rating({ field, value, onChange }: { field: Field; value: unknow
         ))}
       </span>
     );
+  }
   return (
     <div className="rating-editor">
       <div
@@ -21,7 +23,9 @@ export function Rating({ field, value, onChange }: { field: Field; value: unknow
         aria-label={field.name}
         className={`rating rating-${rating.color}`}
         onKeyDown={(e) => {
-          if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+          if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
+            return;
+          }
           e.preventDefault();
           e.stopPropagation();
           const next =

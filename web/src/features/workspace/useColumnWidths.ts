@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+
 import { api, message } from "../../api/client";
 import type { View } from "../../api/types";
 type Write = { viewId: string; fieldId: string; width: number };
@@ -21,7 +22,9 @@ export function useColumnWidths(onSaved: (view: View, fieldId: string, width: nu
         onSaved(view, write.fieldId, write.width);
         setSaved(true);
       } catch (error) {
-        if (latest.current.get(key) === version) setFailed((old) => ({ ...old, [key]: { ...write, error: message(error) } }));
+        if (latest.current.get(key) === version) {
+          setFailed((old) => ({ ...old, [key]: { ...write, error: message(error) } }));
+        }
       } finally {
         setPending((n) => n - 1);
       }

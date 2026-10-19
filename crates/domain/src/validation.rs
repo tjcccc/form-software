@@ -36,9 +36,7 @@ pub fn validate_field(input: &CreateField) -> Result<(), String> {
             || input.config.cardinality.is_none()
             || input.config.presentation.is_none()
         {
-            return Err(
-                "Relations need a target form, cardinality, and picker presentation.".into(),
-            );
+            return Err("Relations need a target form, cardinality, and picker presentation.".into());
         }
     } else if input.config.target_form_id.is_some()
         || input.config.cardinality.is_some()
@@ -73,10 +71,7 @@ pub fn validate_field(input: &CreateField) -> Result<(), String> {
         if input.field_type != FieldType::Integer || !(1..=10).contains(&rating.max) {
             return Err("Ratings need whole-number storage and a maximum between 1 and 10.".into());
         }
-        if config.number_format.is_some()
-            || config.decimal_places.is_some()
-            || config.currency.is_some()
-        {
+        if config.number_format.is_some() || config.decimal_places.is_some() || config.currency.is_some() {
             return Err("Ratings cannot combine with number formatting.".into());
         }
     }
@@ -91,22 +86,17 @@ pub fn validate_write_keys(fields: &[Field], values: &Values) -> Vec<FieldIssue>
     values
         .keys()
         .filter(|id| {
-            !fields.iter().any(|f| {
-                f.id == **id && f.archived_at.is_none() && f.field_type != FieldType::Attachment
-            })
+            !fields
+                .iter()
+                .any(|f| f.id == **id && f.archived_at.is_none() && f.field_type != FieldType::Attachment)
         })
         .map(|id| FieldIssue {
             field_id: Some(*id),
-            message: "Unknown, archived, or attachment field; attachments use the upload endpoint."
-                .into(),
+            message: "Unknown, archived, or attachment field; attachments use the upload endpoint.".into(),
         })
         .collect()
 }
-pub fn validate_values(
-    fields: &[Field],
-    values: &Values,
-    attachments: &[Attachment],
-) -> Vec<FieldIssue> {
+pub fn validate_values(fields: &[Field], values: &Values, attachments: &[Attachment]) -> Vec<FieldIssue> {
     let mut issues = Vec::new();
     for field in fields.iter().filter(|f| f.archived_at.is_none()) {
         let value = values.get(&field.id).unwrap_or(&Value::Null);
@@ -151,13 +141,10 @@ pub fn canonical_value(field: &Field, value: &Value) -> Value {
     value.clone()
 }
 fn validate_value(field: &Field, value: &Value) -> Result<(), &'static str> {
-    if let Some(rating) = &field.config.rating {
-        if !value
-            .as_i64()
-            .is_some_and(|v| (0..=i64::from(rating.max)).contains(&v))
-        {
-            return Err("Use a whole-number rating from zero to the configured maximum.");
-        }
+    if let Some(rating) = &field.config.rating
+        && !value.as_i64().is_some_and(|v| (0..=i64::from(rating.max)).contains(&v))
+    {
+        return Err("Use a whole-number rating from zero to the configured maximum.");
     }
     let valid = match field.field_type {
         FieldType::ShortText => value.as_str().is_some_and(|s| s.chars().count() <= 500),
@@ -172,24 +159,18 @@ fn validate_value(field: &Field, value: &Value) -> Result<(), &'static str> {
         FieldType::Date => value
             .as_str()
             .is_some_and(|s| s.len() == 10 && NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()),
-        FieldType::DateTime => value
-            .as_str()
-            .is_some_and(|s| DateTime::parse_from_rfc3339(s).is_ok()),
-        FieldType::Duration => value
-            .as_i64()
-            .is_some_and(|n| (0..=52_560_000).contains(&n)),
+        FieldType::DateTime => value.as_str().is_some_and(|s| DateTime::parse_from_rfc3339(s).is_ok()),
+        FieldType::Duration => value.as_i64().is_some_and(|n| (0..=52_560_000).contains(&n)),
         FieldType::Url => value.as_str().is_some_and(|s| {
             s.len() <= 4096
-                && url::Url::parse(s)
-                    .is_ok_and(|u| matches!(u.scheme(), "https" | "http") && u.host_str().is_some())
+                && url::Url::parse(s).is_ok_and(|u| matches!(u.scheme(), "https" | "http") && u.host_str().is_some())
         }),
         FieldType::Relation => value.as_array().is_some_and(|ids| {
             ids.len() <= 100
                 && (field.config.cardinality != Some(Cardinality::One) || ids.len() <= 1)
-                && ids.iter().all(|id| {
-                    id.as_str()
-                        .is_some_and(|s| uuid::Uuid::parse_str(s).is_ok())
-                })
+                && ids
+                    .iter()
+                    .all(|id| id.as_str().is_some_and(|s| uuid::Uuid::parse_str(s).is_ok()))
                 && ids.iter().collect::<HashSet<_>>().len() == ids.len()
         }),
         FieldType::Attachment => false,

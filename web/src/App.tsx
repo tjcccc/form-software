@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronRight, LogOut, Plus } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+
 import { api, message } from "./api/client";
 import type { Form, Session } from "./api/types";
-import { BrandMark, FormIcon } from "./components/Icons";
 import { ErrorNotice } from "./components/Dialog";
-import { Workspace } from "./features/workspace/Workspace";
+import { BrandMark, FormIcon } from "./components/Icons";
 import { CreateFormDialog } from "./features/schema/SchemaDesigner";
+import { Workspace } from "./features/workspace/Workspace";
 export default function App() {
   const [session, setSession] = useState<Session | null>();
   const [error, setError] = useState("");
@@ -176,7 +177,9 @@ function AuthenticatedApp({ session, onSignedOut }: { session: Session; onSigned
           onNavigateForm={(id) => {
             const form = forms.find((f) => f.id === id);
             if (form) {
-              if (form.kind === "options") setOptionsOpen(true);
+              if (form.kind === "options") {
+                setOptionsOpen(true);
+              }
               select(form);
             }
           }}
@@ -265,7 +268,7 @@ function Login({ initialError, onSignedIn }: { initialError: string; onSignedIn:
         </form>
         <div className="login-card-footer">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
-          <span>v0.4</span>
+          <span>v0.4.1</span>
         </div>
       </main>
       <footer className="login-footer">

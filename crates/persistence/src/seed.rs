@@ -113,11 +113,7 @@ pub async fn seed_demo(store: &Store, actor: Actor) -> Result<()> {
                 actor,
                 projects.form.id,
                 CreateRecord {
-                    values: [
-                        (projects.fields[0].id, json!(name)),
-                        (project_org.id, json!([org.id])),
-                    ]
-                    .into(),
+                    values: [(projects.fields[0].id, json!(name)), (project_org.id, json!([org.id]))].into(),
                 },
             )
             .await?;

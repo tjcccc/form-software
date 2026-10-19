@@ -1,12 +1,13 @@
+import { Archive, ArrowDown, ArrowUp, Plus, Save } from "lucide-react";
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Archive, Plus, Save } from "lucide-react";
+
 import { api, message } from "../../api/client";
 import type { CreateField, Field, Form, FormSchema } from "../../api/types";
 import { Dialog, ErrorNotice } from "../../components/Dialog";
 import { FieldIcon, FormIcon } from "../../components/Icons";
 import { machineKey } from "../records/values";
+import { fieldLabel, useFieldSettings } from "./fieldDefinitions";
 import { FieldSettings } from "./FieldSettings";
-import { useFieldSettings, fieldLabel } from "./fieldDefinitions";
 export function CreateFormDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (schema: FormSchema) => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");

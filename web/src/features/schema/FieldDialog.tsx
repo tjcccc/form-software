@@ -1,11 +1,12 @@
-import { useState } from "react";
 import { Save } from "lucide-react";
-import { Dialog, ErrorNotice } from "../../components/Dialog";
+import { useState } from "react";
+
 import { api, message } from "../../api/client";
 import type { Field, Form } from "../../api/types";
-import { FieldSettings } from "./FieldSettings";
-import { useFieldSettings } from "./fieldDefinitions";
+import { Dialog, ErrorNotice } from "../../components/Dialog";
 import { machineKey } from "../records/values";
+import { useFieldSettings } from "./fieldDefinitions";
+import { FieldSettings } from "./FieldSettings";
 export type FieldDialogState = { field?: Field; anchor?: Field; before?: boolean; descriptionOnly?: boolean };
 export function FieldDialog({
   formId,
@@ -59,7 +60,9 @@ export function FieldDialog({
       title={state.descriptionOnly ? "Describe this field." : state.field ? "Edit field." : "Make room for a field."}
       eyebrow={state.field?.name ?? "NEW FIELD"}
       onClose={() => {
-        if (!busy) onClose();
+        if (!busy) {
+          onClose();
+        }
       }}
     >
       <form

@@ -7,9 +7,7 @@ use std::{collections::HashSet, sync::Arc};
 use uuid::Uuid;
 async fn prepare(s: &AppState, a: Actor, input: &ImportRequest) -> HttpResult<ImportPreview> {
     if input.csv.len() > 1024 * 1024 {
-        return Err(HttpError::invalid(
-            "CSV imports are limited to 1 MB and 500 records.",
-        ));
+        return Err(HttpError::invalid("CSV imports are limited to 1 MB and 500 records."));
     }
     let schema = s.store.schema(a, input.form_id).await?;
     let mut reader = csv::ReaderBuilder::new()
@@ -20,13 +18,8 @@ async fn prepare(s: &AppState, a: Actor, input: &ImportRequest) -> HttpResult<Im
         .map_err(|_| HttpError::invalid("Could not read CSV headers."))?
         .clone();
     let mut seen_columns = HashSet::new();
-    if headers
-        .iter()
-        .any(|h| h.is_empty() || !seen_columns.insert(h))
-    {
-        return Err(HttpError::invalid(
-            "CSV headers must be nonempty and unique.",
-        ));
+    if headers.iter().any(|h| h.is_empty() || !seen_columns.insert(h)) {
+        return Err(HttpError::invalid("CSV headers must be nonempty and unique."));
     }
     let columns = headers.iter().map(str::to_owned).collect::<Vec<_>>();
     let mut field_ids = HashSet::new();
@@ -36,29 +29,21 @@ async fn prepare(s: &AppState, a: Actor, input: &ImportRequest) -> HttpResult<Im
         let field = schema
             .fields
             .iter()
-            .find(|f| {
-                f.id == mapping.field_id
-                    && f.archived_at.is_none()
-                    && f.field_type != FieldType::Attachment
-            })
+            .find(|f| f.id == mapping.field_id && f.archived_at.is_none() && f.field_type != FieldType::Attachment)
             .ok_or_else(|| HttpError::invalid("Mapping includes an unavailable field."))?;
         let index = headers
             .iter()
             .position(|h| h == mapping.column)
             .ok_or_else(|| HttpError::invalid("Mapped CSV column does not exist."))?;
         if !field_ids.insert(field.id) || !mapped_columns.insert(index) {
-            return Err(HttpError::invalid(
-                "Each column and field can only be mapped once.",
-            ));
+            return Err(HttpError::invalid("Each column and field can only be mapped once."));
         }
         mappings.push((index, field));
     }
     let mut rows = Vec::new();
     for (index, line) in reader.records().enumerate() {
         if index >= 500 {
-            return Err(HttpError::invalid(
-                "CSV imports are limited to 500 records.",
-            ));
+            return Err(HttpError::invalid("CSV imports are limited to 500 records."));
         }
         let line = line.map_err(|e| HttpError::invalid(format!("CSV row {}: {e}", index + 2)))?;
         let mut values = Values::new();
@@ -77,11 +62,7 @@ async fn prepare(s: &AppState, a: Actor, input: &ImportRequest) -> HttpResult<Im
             }
         }
         if issues.is_empty() {
-            issues.extend(
-                s.store
-                    .validate_record_input(a, input.form_id, &values)
-                    .await?,
-            );
+            issues.extend(s.store.validate_record_input(a, input.form_id, &values).await?);
         }
         rows.push(ImportRow {
             row: index + 2,
@@ -90,11 +71,7 @@ async fn prepare(s: &AppState, a: Actor, input: &ImportRequest) -> HttpResult<Im
         });
     }
     let valid = !rows.is_empty() && rows.iter().all(|r| r.issues.is_empty());
-    Ok(ImportPreview {
-        columns,
-        rows,
-        valid,
-    })
+    Ok(ImportPreview { columns, rows, valid })
 }
 async fn parse_value(s: &AppState, a: Actor, field: &Field, raw: &str) -> Result<Value, String> {
     if raw.is_empty() {
@@ -111,10 +88,7 @@ async fn parse_value(s: &AppState, a: Actor, field: &Field, raw: &str) -> Result
             _ => Err("Use true or false.".into()),
         },
         FieldType::Relation => {
-            let target = field
-                .config
-                .target_form_id
-                .ok_or("Missing relation target.")?;
+            let target = field.config.target_form_id.ok_or("Missing relation target.")?;
             let schema = s.store.schema(a, target).await.map_err(|e| e.to_string())?;
             let name = schema
                 .fields
@@ -156,9 +130,7 @@ async fn parse_value(s: &AppState, a: Actor, field: &Field, raw: &str) -> Result
             }
             Ok(json!(ids))
         }
-        FieldType::Attachment => {
-            Err("Import attachments separately after creating records.".into())
-        }
+        FieldType::Attachment => Err("Import attachments separately after creating records.".into()),
         _ => Ok(json!(raw)),
     }
 }

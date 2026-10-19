@@ -41,11 +41,7 @@ impl IntoResponse for HttpError {
 impl From<StoreError> for HttpError {
     fn from(error: StoreError) -> Self {
         match error {
-            StoreError::NotFound => Self::new(
-                StatusCode::NOT_FOUND,
-                "not_found",
-                "This resource is unavailable.",
-            ),
+            StoreError::NotFound => Self::new(StatusCode::NOT_FOUND, "not_found", "This resource is unavailable."),
             StoreError::Invalid(message) => Self::invalid(message),
             StoreError::Validation(issues) => Self(
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -60,9 +56,7 @@ impl From<StoreError> for HttpError {
                 StatusCode::CONFLICT,
                 Box::new(ApiError {
                     code: "conflict".into(),
-                    message:
-                        "This record has changed. Review the latest version before saving again."
-                            .into(),
+                    message: "This record has changed. Review the latest version before saving again.".into(),
                     issues: vec![],
                     current: Some(*current),
                 }),

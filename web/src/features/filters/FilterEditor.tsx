@@ -1,5 +1,6 @@
-import { useState } from "react";
 import { Check, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+
 import type { Catalogs, Field, Filter as FilterRule } from "../../api/types";
 import { FilterRelationPicker } from "./FilterRelationPicker";
 import { changeOperator, conditionError, emptyCheck, multipleChoice, newCondition, operators } from "./filterRules";
@@ -38,7 +39,9 @@ export function FilterEditor({
         .filter(([, message]) => message),
     );
     setIssues(errors);
-    if (Object.keys(errors).length) return;
+    if (Object.keys(errors).length) {
+      return;
+    }
     onChange(draft.map((filter) => ({ ...filter, value: emptyCheck(filter.op) ? null : filter.value })));
   }
   return (
@@ -66,7 +69,9 @@ export function FilterEditor({
                 value={filter.field_id}
                 onChange={(e) => {
                   const next = fields.find((f) => f.id === e.target.value);
-                  if (next) update(index, newCondition(next));
+                  if (next) {
+                    update(index, newCondition(next));
+                  }
                 }}
               >
                 {fields.map((f) => (
@@ -163,7 +168,9 @@ export function FilterEditor({
         className="text-button filter-add"
         disabled={!fields.length || draft.length >= 20}
         onClick={() => {
-          if (fields[0]) setDraft([...draft, newCondition(fields[0])]);
+          if (fields[0]) {
+            setDraft([...draft, newCondition(fields[0])]);
+          }
         }}
       >
         <Plus size={14} />

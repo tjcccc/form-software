@@ -12,3 +12,6 @@ thiserror.workspace = true
 utoipa.workspace = true
 rust_decimal = "1"
 url = "2"
+
+[lints]
+workspace = true

@@ -327,7 +327,7 @@ export function Workspace({
         <footer className="workspace-bottom">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
           <span>
-            FormSoftware <span className="bottom-slash">/</span> 0.6.0
+            FormSoftware <span className="bottom-slash">/</span> 0.7.0
           </span>
         </footer>
       </div>
@@ -401,6 +401,7 @@ export function Workspace({
               ["Save cell / edit next cell", "Enter / Tab"],
               ["Copy / cut / paste cells", "⌘ / Ctrl + C / X / V"],
               ["Clear selected cells", "Delete"],
+              ["Undo / redo grid changes", "⌘ / Ctrl + Z / Shift + Z"],
               ["Record actions", "Shift + F10"],
               ["Close a panel", "Esc"],
               ["Show this guide", "?"],

@@ -1187,6 +1187,83 @@ async fn batch_record_writes(pool: PgPool) {
         ]
     );
 
+    // Archiving and restoring, as undo uses them: versioned, atomic with other writes, and data-preserving.
+    let (c, d) = (&written.created[0], &written.created[1]);
+    let response = api
+        .request(
+            Method::POST,
+            &batch,
+            json!({"archives":[{"record_id":c.id,"expected_version":c.version}],
+                   "updates":[{"record_id":d.id,"expected_version":d.version,"values":{name.to_string():null}}]}),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(count().await, 4);
+    let archived: WrittenRecords = api
+        .ok(
+            Method::POST,
+            &batch,
+            json!({"archives":[{"record_id":c.id,"expected_version":c.version}]}),
+        )
+        .await;
+    assert_eq!(
+        (archived.archived[0].id, archived.archived[0].version),
+        (c.id, c.version + 1)
+    );
+    assert_eq!(count().await, 3);
+    let stale = api
+        .request(
+            Method::POST,
+            &batch,
+            json!({"restores":[{"record_id":c.id,"expected_version":c.version}]}),
+        )
+        .await;
+    assert_eq!(stale.status(), StatusCode::CONFLICT);
+    let live = api
+        .request(
+            Method::POST,
+            &batch,
+            json!({"restores":[{"record_id":d.id,"expected_version":d.version}]}),
+        )
+        .await;
+    assert_eq!(live.status(), StatusCode::NOT_FOUND);
+    let restored: WrittenRecords = api
+        .ok(
+            Method::POST,
+            &batch,
+            json!({"restores":[{"record_id":c.id,"expected_version":c.version + 1}]}),
+        )
+        .await;
+    assert_eq!(restored.restored[0].version, c.version + 2);
+    assert_eq!(restored.restored[0].values[&name], json!("C"));
+    assert_eq!(count().await, 4);
+    // A record that an active record links to stays, unless the linking record is archived in the same write.
+    let people_batch = format!("/api/v1/forms/{}/records/batch", people.form.id);
+    let ada_now = version(ada.id).await;
+    let response = api
+        .request(
+            Method::POST,
+            &people_batch,
+            json!({"archives":[{"record_id":ada.id,"expected_version":ada_now}]}),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let a_now = version(a.id).await;
+    api.ok::<WrittenRecords>(
+        Method::POST,
+        &batch,
+        json!({"updates":[{"record_id":a.id,"expected_version":a_now,"values":{owner.id.to_string():[]}}]}),
+    )
+    .await;
+    let freed: WrittenRecords = api
+        .ok(
+            Method::POST,
+            &people_batch,
+            json!({"archives":[{"record_id":ada.id,"expected_version":ada_now}]}),
+        )
+        .await;
+    assert_eq!(freed.archived.len(), 1);
+
     // Another workspace can neither write these records nor resolve labels in this workspace's forms.
     let other = second_workspace(&pool, &api, &login, &password).await;
     let theirs = other.form("theirs", "standard").await;

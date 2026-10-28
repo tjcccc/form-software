@@ -25,6 +25,10 @@ export type WriteRecords = Omit<Schemas["WriteRecords"], "updates" | "creates"> 
   updates?: { record_id: string; expected_version: number; values: Values }[];
   creates?: { values: Values }[];
 };
-export type WrittenRecords = { updated: DataRecord[]; created: DataRecord[] };
+export type WrittenRecords = Omit<Schemas["WrittenRecords"], "updated" | "created" | "restored"> & {
+  updated: DataRecord[];
+  created: DataRecord[];
+  restored: DataRecord[];
+};
 export type RelationCatalog = { schema: FormSchema; records: DataRecord[] };
 export type Catalogs = Record<string, RelationCatalog>;

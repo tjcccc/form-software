@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.6.0"
+    "version": "0.7.0"
   },
   "paths": {
     "/api/v1/attachments/{attachment_id}": {
@@ -1368,6 +1368,24 @@
           }
         }
       },
+      "ArchivedRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The archived record's new version, which a later restore expects."
+          }
+        }
+      },
       "Attachment": {
         "type": "object",
         "required": [
@@ -2158,6 +2176,25 @@
         },
         "additionalProperties": false
       },
+      "RecordVersion": {
+        "type": "object",
+        "description": "A record and the version a batch write expects it to have, for archiving or restoring it.",
+        "required": [
+          "record_id",
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "record_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
       "ResolveRecords": {
         "type": "object",
         "description": "Exact primary-name lookups in one target form, for pasted or imported relation text.",
@@ -2478,12 +2515,24 @@
       },
       "WriteRecords": {
         "type": "object",
-        "description": "Update and create records of one form in a single transaction. Any validation failure or version conflict\nrejects the whole write. Created records are appended to the end of manual order.",
+        "description": "Update, create, archive, and restore records of one form in a single transaction. Any validation failure or\nversion conflict rejects the whole write. Created records are appended to the end of manual order. Archiving\nrefuses records that active records still link to; restoring brings back an archived record unchanged.",
         "properties": {
+          "archives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordVersion"
+            }
+          },
           "creates": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CreateRecord"
+            }
+          },
+          "restores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordVersion"
             }
           },
           "updates": {
@@ -2499,15 +2548,31 @@
         "type": "object",
         "required": [
           "updated",
-          "created"
+          "created",
+          "archived",
+          "restored"
         ],
         "properties": {
+          "archived": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchivedRecord"
+            },
+            "description": "Archived records in request order."
+          },
           "created": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Record"
             },
             "description": "Created records in request order."
+          },
+          "restored": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Record"
+            },
+            "description": "Restored records in request order."
           },
           "updated": {
             "type": "array",

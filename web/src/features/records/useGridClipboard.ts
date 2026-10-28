@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { api, ApiError, message } from "../../api/client";
-import type { Catalogs, DataRecord, Field, FormSchema, ResolvedLabel, WriteRecords } from "../../api/types";
+import type { Catalogs, DataRecord, Field, FormSchema, ResolvedLabel, Values, WriteRecords, WrittenRecords } from "../../api/types";
 import type { CellRange, CellRef } from "./cellSelection";
 import { copyText, parseTsv, toTsv } from "./clipboardText";
 import {
@@ -20,7 +20,7 @@ import {
   writeCount,
 } from "./gridPaste";
 
-type Pending = { writes: WriteRecords; newRows: number; select?: [CellRef, CellRef] };
+type Pending = { label: string; writes: WriteRecords; newRows: number; select?: [CellRef, CellRef] };
 // Copy, cut, paste, and clear for the grid's cell selection. Every write goes through the atomic batch endpoint, so a
 // paste either saves completely or not at all; the server validates values and versions.
 export function useGridClipboard({
@@ -35,6 +35,9 @@ export function useGridClipboard({
   onNotice,
   onSelect,
   rowNumber,
+  draft,
+  onDraftUsed,
+  onWritten,
 }: {
   schema: FormSchema;
   rows: DataRecord[];
@@ -48,6 +51,11 @@ export function useGridClipboard({
   onSelect: (anchor: CellRef, focus: CellRef) => void;
   // The number shown in the row-number column, so messages match what people see.
   rowNumber: (record: DataRecord) => number;
+  // Values of an empty row appended at the end. A paste onto it becomes the first new record.
+  draft?: Values;
+  onDraftUsed: () => void;
+  // Reports each saved write with the rows as they were before it, for undo.
+  onWritten: (label: string, before: DataRecord[], writes: WriteRecords, written: WrittenRecords) => void;
 }) {
   const [cut, setCut] = useState<{ token: string; cells: { recordId: string; field: Field }[] }>();
   const [pending, setPending] = useState<Pending>();
@@ -135,6 +143,10 @@ export function useGridClipboard({
             })
           : [];
       const built = buildWrites(writes, rows, clears);
+      const label = clears.length ? "cut and paste" : "paste";
+      if (draft && built.creates?.length) {
+        built.creates[0] = { values: { ...draft, ...built.creates[0].values } };
+      }
       if (writeCount(built) > maxPasteRecords) {
         onNotice(`Paste changes at most ${maxPasteRecords} records at a time.`);
         return;
@@ -155,11 +167,12 @@ export function useGridClipboard({
         skipped && "Files and empty required fields were skipped.",
         droppedColumns && "Columns past the last field were left out.",
       ];
-      if (newRows) {
-        setPending({ writes: built, newRows, select });
+      // The appended empty row already is the first new row, so only rows beyond it need confirming.
+      if (newRows > (draft ? 1 : 0)) {
+        setPending({ label, writes: built, newRows, select });
         return;
       }
-      await write({ writes: built, newRows, select }, notes.filter(Boolean).join(" "));
+      await write({ label, writes: built, newRows, select }, notes.filter(Boolean).join(" "));
     } finally {
       setBusy(false);
     }
@@ -169,6 +182,9 @@ export function useGridClipboard({
       return;
     }
     const block = selected();
+    if (!block.length) {
+      return;
+    }
     const cells = block.flatMap(({ record, fields }) => fields.map((field) => ({ record, field })));
     const writable = cells.filter(({ field }) => !skipsWrite(field, null));
     const writes = buildWrites(
@@ -185,7 +201,7 @@ export function useGridClipboard({
     }
     setBusy(true);
     try {
-      await write({ writes, newRows: 0 }, writable.length < cells.length ? "Files and required fields were kept." : "");
+      await write({ label: "clear", writes, newRows: 0 }, writable.length < cells.length ? "Files and required fields were kept." : "");
     } finally {
       setBusy(false);
     }
@@ -215,8 +231,12 @@ export function useGridClipboard({
   async function write(plan: Pending, note: string) {
     try {
       const written = await api.writeRecords(schema.form.id, plan.writes);
+      onWritten(plan.label, rows, plan.writes, written);
       written.updated.forEach(onSaved);
       if (written.created.length) {
+        if (draft) {
+          onDraftUsed();
+        }
         onChanged();
       }
       if (plan.writes.updates?.some((u) => cut?.cells.some((c) => c.recordId === u.record_id))) {

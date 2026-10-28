@@ -1,5 +1,5 @@
 import { Check, Paperclip, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 
 import { api, ApiError, message } from "../../api/client";
@@ -32,12 +32,16 @@ export function InlineCellEditor({
   const [conflict, setConflict] = useState<DataRecord>();
   const [busy, setBusy] = useState(false);
   const [, reposition] = useState(0);
+  const [height, setHeight] = useState(0);
   const locked = useRef(false);
   const ref = useRef<HTMLDivElement>(null);
   const dirty = JSON.stringify(value) !== JSON.stringify(record.values[field.id]);
   const rect = anchor.getBoundingClientRect();
   const expanded = !!field.config.rating || ["long_text", "relation", "attachment"].includes(field.type);
   const width = Math.min(window.innerWidth - 16, expanded ? Math.max(rect.width, 330) : rect.width);
+  // Cover the cell from its top; when the editor would run off the bottom, grow upward from the cell's bottom so it
+  // still sits on its own row.
+  const top = Math.max(8, rect.top + height <= window.innerHeight - 8 ? rect.top : rect.bottom - height);
 
   async function save() {
     if (locked.current || conflict) {
@@ -69,6 +73,18 @@ export function InlineCellEditor({
       setBusy(false);
     }
   }
+  // The height changes while editing (the option list opens and closes), so the position follows it.
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) {
+      return;
+    }
+    const measure = () => setHeight(node.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     const move = () => reposition((v) => v + 1);
     document.addEventListener("scroll", move, true);
@@ -183,7 +199,7 @@ export function InlineCellEditor({
       aria-label={`Edit ${field.name}`}
       style={{
         left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
-        top: Math.max(8, expanded ? Math.min(rect.top, window.innerHeight - 360) : Math.min(rect.top, window.innerHeight - 90)),
+        top,
         width,
       }}
       onKeyDown={(event) => {

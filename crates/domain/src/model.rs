@@ -387,8 +387,16 @@ pub struct RecordPatch {
     pub values: Values,
     pub expected_version: i32,
 }
-/// Update and create records of one form in a single transaction. Any validation failure or version conflict
-/// rejects the whole write. Created records are appended to the end of manual order.
+/// A record and the version a batch write expects it to have, for archiving or restoring it.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RecordVersion {
+    pub record_id: Uuid,
+    pub expected_version: i32,
+}
+/// Update, create, archive, and restore records of one form in a single transaction. Any validation failure or
+/// version conflict rejects the whole write. Created records are appended to the end of manual order. Archiving
+/// refuses records that active records still link to; restoring brings back an archived record unchanged.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WriteRecords {
@@ -396,6 +404,16 @@ pub struct WriteRecords {
     pub updates: Vec<RecordPatch>,
     #[serde(default)]
     pub creates: Vec<CreateRecord>,
+    #[serde(default)]
+    pub archives: Vec<RecordVersion>,
+    #[serde(default)]
+    pub restores: Vec<RecordVersion>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ArchivedRecord {
+    pub id: Uuid,
+    /// The archived record's new version, which a later restore expects.
+    pub version: i32,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct WrittenRecords {
@@ -403,6 +421,10 @@ pub struct WrittenRecords {
     pub updated: Vec<Record>,
     /// Created records in request order.
     pub created: Vec<Record>,
+    /// Archived records in request order.
+    pub archived: Vec<ArchivedRecord>,
+    /// Restored records in request order.
+    pub restored: Vec<Record>,
 }
 /// Exact primary-name lookups in one target form, for pasted or imported relation text.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

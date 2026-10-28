@@ -5,6 +5,12 @@ use std::collections::BTreeMap;
 
 const RECORD_VALUE: &str = "jsonb_build_object('id',r.id,'form_id',r.form_id,'version',r.version,'created_at',r.created_at,'updated_at',r.updated_at,'created_by',r.created_by,'updated_by',r.updated_by,'values',r.data || coalesce((SELECT jsonb_object_agg(x.source_field_id, x.ids) FROM (SELECT source_field_id,jsonb_agg(target_record_id ORDER BY position) AS ids FROM record_relations WHERE source_record_id=r.id GROUP BY source_field_id) x),'{}'::jsonb),'attachments',coalesce((SELECT jsonb_agg(to_jsonb(a)-'storage_key'-'workspace_id'-'uploaded_by'-'created_at' ORDER BY a.created_at) FROM attachments a WHERE a.record_id=r.id),'[]'::jsonb))";
 impl Store {
+    /// An archived record of an active form in the actor's workspace, for restoring it.
+    async fn archived_record(&self, actor: Actor, id: Uuid) -> Result<Record> {
+        let row = sqlx::query(&format!("SELECT {RECORD_VALUE} AS value FROM records r JOIN forms f ON f.id=r.form_id WHERE r.id=$1 AND f.workspace_id=$2 AND f.archived_at IS NULL AND r.deleted_at IS NOT NULL"))
+            .bind(id).bind(actor.workspace_id).fetch_optional(&self.pool).await?.ok_or(StoreError::NotFound)?;
+        decode(&row, "value")
+    }
     pub async fn record(&self, actor: Actor, id: Uuid) -> Result<Record> {
         let row = sqlx::query(&format!("SELECT {RECORD_VALUE} AS value FROM records r JOIN forms f ON f.id=r.form_id WHERE r.id=$1 AND f.workspace_id=$2 AND f.archived_at IS NULL AND r.deleted_at IS NULL"))
             .bind(id).bind(actor.workspace_id).fetch_optional(&self.pool).await?.ok_or(StoreError::NotFound)?;
@@ -256,14 +262,19 @@ impl Store {
     /// Applies record updates and appended creates for one form atomically. Every record is checked before anything
     /// is written, so one conflict or invalid record rejects the whole batch.
     pub async fn write_records(&self, actor: Actor, form_id: Uuid, input: WriteRecords) -> Result<WrittenRecords> {
-        let count = input.updates.len() + input.creates.len();
+        let count = input.updates.len() + input.creates.len() + input.archives.len() + input.restores.len();
         if count == 0 || count > MAX_BATCH_RECORDS {
             return Err(invalid(format!(
                 "A batch write changes between 1 and {MAX_BATCH_RECORDS} records."
             )));
         }
         let mut seen = std::collections::HashSet::new();
-        if input.updates.iter().any(|u| !seen.insert(u.record_id)) {
+        let ids = input
+            .updates
+            .iter()
+            .map(|u| u.record_id)
+            .chain(input.archives.iter().chain(&input.restores).map(|r| r.record_id));
+        if ids.into_iter().any(|id| !seen.insert(id)) {
             return Err(invalid("Each record can appear only once in a batch write."));
         }
         let mut tx = self.pool.begin().await?;
@@ -297,6 +308,30 @@ impl Store {
             }
             report(Some(current.id), None, found);
             planned.push((current, merged));
+        }
+        let mut archives = Vec::new();
+        for item in &input.archives {
+            let current = self.record(actor, item.record_id).await?;
+            if current.form_id != form_id {
+                return Err(StoreError::NotFound);
+            }
+            if current.version == item.expected_version {
+                archives.push(current);
+            } else {
+                conflicts.push(current);
+            }
+        }
+        let mut restores = Vec::new();
+        for item in &input.restores {
+            let current = self.archived_record(actor, item.record_id).await?;
+            if current.form_id != form_id {
+                return Err(StoreError::NotFound);
+            }
+            if current.version == item.expected_version {
+                restores.push(current.id);
+            } else {
+                conflicts.push(current);
+            }
         }
         for (index, create) in input.creates.iter().enumerate() {
             let mut found = validate_write_keys(&fields, &create.values);
@@ -355,6 +390,51 @@ impl Store {
             }
         }
         problems.extend(relation_problems);
+        let mut archived = Vec::new();
+        if problems.is_empty() && !archives.is_empty() {
+            let ids: Vec<Uuid> = archives.iter().map(|r| r.id).collect();
+            // Locking the targets serializes against relation assignments from other forms.
+            sqlx::query("SELECT id FROM records WHERE id=ANY($1) FOR UPDATE")
+                .bind(&ids)
+                .fetch_all(&mut *tx)
+                .await?;
+            for record in &archives {
+                // Links from records archived in the same write do not keep a record alive.
+                let referenced: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM record_relations x JOIN records r ON r.id=x.source_record_id JOIN fields f ON f.id=x.source_field_id WHERE x.target_record_id=$1 AND r.deleted_at IS NULL AND f.archived_at IS NULL AND NOT r.id=ANY($2))")
+                    .bind(record.id).bind(&ids).fetch_one(&mut *tx).await?;
+                if referenced {
+                    problems.push(RecordIssue {
+                        record_id: Some(record.id),
+                        create_index: None,
+                        field_id: None,
+                        message: "This record is referenced. Remove its references, or disable the option to preserve history.".into(),
+                    });
+                    continue;
+                }
+                sqlx::query(
+                    "UPDATE records SET deleted_at=now(),version=version+1,updated_at=now(),updated_by=$2 WHERE id=$1",
+                )
+                .bind(record.id)
+                .bind(actor.user_id)
+                .execute(&mut *tx)
+                .await?;
+                archived.push(ArchivedRecord {
+                    id: record.id,
+                    version: record.version + 1,
+                });
+            }
+        }
+        if problems.is_empty() {
+            for id in &restores {
+                sqlx::query(
+                    "UPDATE records SET deleted_at=NULL,version=version+1,updated_at=now(),updated_by=$2 WHERE id=$1",
+                )
+                .bind(id)
+                .bind(actor.user_id)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
         if !problems.is_empty() {
             return Err(StoreError::BatchValidation(problems));
         }
@@ -362,7 +442,12 @@ impl Store {
         let mut written = WrittenRecords {
             updated: Vec::new(),
             created: Vec::new(),
+            archived,
+            restored: Vec::new(),
         };
+        for id in restores {
+            written.restored.push(self.record(actor, id).await?);
+        }
         for id in updated {
             written.updated.push(self.record(actor, id).await?);
         }

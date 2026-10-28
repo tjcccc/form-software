@@ -352,6 +352,15 @@ export interface components {
             /** @description Per-record problems from a batch write; empty for single-record operations. */
             records?: components["schemas"]["RecordIssue"][];
         };
+        ArchivedRecord: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: int32
+             * @description The archived record's new version, which a later restore expects.
+             */
+            version: number;
+        };
         Attachment: {
             content_type: string;
             /** Format: uuid */
@@ -568,6 +577,13 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description A record and the version a batch write expects it to have, for archiving or restoring it. */
+        RecordVersion: {
+            /** Format: int32 */
+            expected_version: number;
+            /** Format: uuid */
+            record_id: string;
+        };
         /** @description Exact primary-name lookups in one target form, for pasted or imported relation text. */
         ResolveRecords: {
             labels: string[];
@@ -658,16 +674,23 @@ export interface components {
             slug: string;
         };
         /**
-         * @description Update and create records of one form in a single transaction. Any validation failure or version conflict
-         *     rejects the whole write. Created records are appended to the end of manual order.
+         * @description Update, create, archive, and restore records of one form in a single transaction. Any validation failure or
+         *     version conflict rejects the whole write. Created records are appended to the end of manual order. Archiving
+         *     refuses records that active records still link to; restoring brings back an archived record unchanged.
          */
         WriteRecords: {
+            archives?: components["schemas"]["RecordVersion"][];
             creates?: components["schemas"]["CreateRecord"][];
+            restores?: components["schemas"]["RecordVersion"][];
             updates?: components["schemas"]["RecordPatch"][];
         };
         WrittenRecords: {
+            /** @description Archived records in request order. */
+            archived: components["schemas"]["ArchivedRecord"][];
             /** @description Created records in request order. */
             created: components["schemas"]["Record"][];
+            /** @description Restored records in request order. */
+            restored: components["schemas"]["Record"][];
             /** @description Updated records in request order. */
             updated: components["schemas"]["Record"][];
         };

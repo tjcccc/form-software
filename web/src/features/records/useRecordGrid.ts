@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 
 import { api, ApiError, message } from "../../api/client";
 import type { DataRecord, Field, FormSchema, ViewConfig } from "../../api/types";
+import { clearedValue, maxPasteRecords } from "./gridPaste";
 import type { RecordAction } from "./RecordContextMenu";
+import type { HistoryEntry } from "./undoHistory";
 import { initialValues, titleOf } from "./values";
 
 export function useRecordGrid({
@@ -14,6 +16,7 @@ export function useRecordGrid({
   onChanged,
   onNotice,
   editingBlocked,
+  onRecorded,
 }: {
   schema: FormSchema;
   records: DataRecord[];
@@ -23,18 +26,21 @@ export function useRecordGrid({
   onChanged: () => void;
   onNotice: (notice: string) => void;
   editingBlocked: boolean;
+  // Receives each saved grid action as an undo step.
+  onRecorded: (build: () => HistoryEntry) => void;
 }) {
   const [active, setActive] = useState<{ record: DataRecord; field: Field; anchor: HTMLElement; seed?: unknown }>();
   const [menu, setMenu] = useState<{ record: DataRecord; x: number; y: number; anchor: HTMLElement }>();
   const [selected, setSelected] = useState<string[]>([]);
-  const [draft, setDraft] = useState<{ record: DataRecord; anchor: DataRecord; before: boolean }>();
+  // A draft without an anchor is appended at the end of manual order.
+  const [draft, setDraft] = useState<{ record: DataRecord; anchor?: DataRecord; before: boolean }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const chosen = records.filter((r) => selected.includes(r.id));
   const all = records.length > 0 && chosen.length === records.length;
   const rows = [...records];
   if (draft) {
-    const anchor = rows.findIndex((r) => r.id === draft.anchor.id);
+    const anchor = draft.anchor ? rows.findIndex((r) => r.id === draft.anchor?.id) : rows.length - 1;
     rows.splice(anchor < 0 ? 0 : anchor + (draft.before ? 0 : 1), 0, draft.record);
   }
   useEffect(() => {
@@ -56,6 +62,10 @@ export function useRecordGrid({
     };
   }, [draft, busy]);
   function describe(error: unknown) {
+    if (error instanceof ApiError && error.body.records?.length) {
+      const reasons = [...new Set(error.body.records.map((issue) => issue.message))];
+      return `${error.message} ${reasons.join(" ")}`;
+    }
     return error instanceof ApiError && error.body.issues.length
       ? error.body.issues
           .map((issue) => `${schema.fields.find((field) => field.id === issue.field_id)?.name ?? "Record"}: ${issue.message}`)
@@ -73,9 +83,24 @@ export function useRecordGrid({
   function saved(record: DataRecord) {
     if (record.id === draft?.record.id) {
       setDraft({ ...draft, record });
-    } else {
-      onSaved(record);
+      return;
     }
+    if (active && active.record.id === record.id) {
+      const field = active.field;
+      const value = (values: DataRecord["values"]) => (field.id in values ? values[field.id] : clearedValue(field));
+      onRecorded(() => ({
+        label: "edit",
+        changes: [
+          {
+            recordId: record.id,
+            version: record.version,
+            before: { [field.id]: value(active.record.values) },
+            after: { [field.id]: value(record.values) },
+          },
+        ],
+      }));
+    }
+    onSaved(record);
   }
   function closeCell() {
     const anchor = active?.anchor;
@@ -118,7 +143,8 @@ export function useRecordGrid({
     }
     setBusy(true);
     try {
-      await api.duplicateRecord(record);
+      const copy = await api.duplicateRecord(record);
+      onRecorded(() => ({ label: "duplicate", changes: [{ recordId: copy.id, version: copy.version, before: null, after: {} }] }));
       onChanged();
       onNotice(
         config.sort || config.group_by
@@ -144,22 +170,57 @@ export function useRecordGrid({
     ) {
       return;
     }
+    if (items.length > maxPasteRecords) {
+      onNotice(`Delete at most ${maxPasteRecords} records at a time.`);
+      return;
+    }
     setBusy(true);
     setError("");
-    let deleted = 0;
+    // One atomic write, so either every selected record is deleted or none is.
     try {
-      for (const record of items) {
-        await api.archiveRecord(record);
-        deleted++;
-        setSelected((old) => old.filter((id) => id !== record.id));
-      }
-      onNotice(`${deleted} record${deleted === 1 ? "" : "s"} deleted.`);
+      const written = await api.writeRecords(schema.form.id, {
+        archives: items.map((r) => ({ record_id: r.id, expected_version: r.version })),
+      });
+      setSelected((old) => old.filter((id) => !items.some((r) => r.id === id)));
+      onRecorded(() => ({
+        label: items.length === 1 ? "delete" : `delete of ${items.length} records`,
+        changes: written.archived.map((r) => ({ recordId: r.id, version: r.version, before: {}, after: null })),
+      }));
+      onNotice(`${items.length} record${items.length === 1 ? "" : "s"} deleted.`);
     } catch (e) {
-      setError(`${deleted ? `${deleted} deleted. ` : ""}${describe(e)} Remaining records were kept.`);
+      setError(describe(e));
     } finally {
       setBusy(false);
       onChanged();
     }
+  }
+  // Adds an empty row at the end of the table, ready for typing or pasting; it saves like any other draft row.
+  function appendDraft() {
+    if (editingBlocked || busy) {
+      onNotice("Close the record editor first.");
+      return false;
+    }
+    if (draft) {
+      onNotice("Save or cancel the draft row first.");
+      return false;
+    }
+    setError("");
+    const now = new Date().toISOString();
+    setDraft({
+      before: false,
+      record: {
+        id: "draft",
+        form_id: schema.form.id,
+        version: 0,
+        values: initialValues(schema),
+        attachments: [],
+        created_at: now,
+        updated_at: now,
+        created_by: "",
+        updated_by: "",
+      },
+    });
+    return true;
   }
   async function saveDraft() {
     if (!draft || active) {
@@ -169,7 +230,10 @@ export function useRecordGrid({
     setBusy(true);
     setError("");
     try {
-      await api.insertRecord(draft.anchor, draft.record.values, draft.before);
+      const created = draft.anchor
+        ? await api.insertRecord(draft.anchor, draft.record.values, draft.before)
+        : await api.createRecord(schema.form.id, draft.record.values);
+      onRecorded(() => ({ label: "new row", changes: [{ recordId: created.id, version: created.version, before: null, after: {} }] }));
       setDraft(undefined);
       onChanged();
       onNotice(
@@ -205,5 +269,6 @@ export function useRecordGrid({
     closeMenu,
     remove,
     saveDraft,
+    appendDraft,
   };
 }

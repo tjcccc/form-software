@@ -8,14 +8,17 @@ import { columnLayouts, visibleFields } from "../workspace/columns";
 import type { ColumnAction } from "../workspace/useFieldActions";
 import type { CellRef } from "./cellSelection";
 import { ColumnResizeHandle } from "./ColumnResizeHandle";
+import { clearedValue } from "./gridPaste";
 import { headingHeight, offsetsOf, rowHeight, segments, type WindowRange, windowRange } from "./gridWindow";
 import { groupKey, groupValue } from "./grouping";
 import { InlineCellEditor } from "./InlineCellEditor";
 import { Rating } from "./Rating";
 import { RecordContextMenu } from "./RecordContextMenu";
+import { changesFromWrite } from "./undoHistory";
 import { useCellSelection } from "./useCellSelection";
 import { useGridClipboard } from "./useGridClipboard";
 import { useRecordGrid } from "./useRecordGrid";
+import { useUndoHistory } from "./useUndoHistory";
 import { displayValue, relationIds, titleOf } from "./values";
 export function RecordTable({
   schema,
@@ -57,6 +60,7 @@ export function RecordTable({
   canResize: boolean;
   onResize: (fieldId: string, width: number) => void;
 }) {
+  const history = useUndoHistory({ formId: schema.form.id, enabled: !editingBlocked, onSaved, onChanged, onNotice });
   const {
     active,
     menu,
@@ -78,6 +82,7 @@ export function RecordTable({
     closeMenu,
     remove,
     saveDraft,
+    appendDraft,
   } = useRecordGrid({
     schema,
     records,
@@ -87,6 +92,7 @@ export function RecordTable({
     onChanged,
     onNotice,
     editingBlocked,
+    onRecorded: history.record,
   });
   const [columnMenu, setColumnMenu] = useState<{ field: Field; anchor: HTMLElement; x: number; y: number }>();
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
@@ -120,16 +126,20 @@ export function RecordTable({
   });
   const clipboard = useGridClipboard({
     schema,
-    rows: visibleRows,
+    rows: visibleRows.filter((r) => r.id !== "draft"),
     fields,
     range: cells.range,
     catalogs,
-    blocked: !!draft || editingBlocked || busy,
+    blocked: !!draft?.anchor || editingBlocked || busy,
     onSaved,
     onChanged,
     onNotice,
     onSelect: cells.selectCells,
     rowNumber: (record) => (position.get(record.id) ?? 0) + 1,
+    draft: draft && !draft.anchor ? draft.record.values : undefined,
+    onDraftUsed: () => setDraft(undefined),
+    onWritten: (label, before, writes, written) =>
+      history.record(() => ({ label, changes: changesFromWrite(before, writes, written, (id) => emptyValue(schema, id)) })),
   });
   const cutKeys = new Set(clipboard.cutCells?.map((c) => `${c.recordId}:${c.field.id}`));
   const items: GridItem[] = [];
@@ -224,8 +234,8 @@ export function RecordTable({
             </>
           ) : draft ? (
             <>
-              <span className="eyebrow">NEW ROW · {draft.before ? "ABOVE" : "BELOW"}</span>
-              <span>Fill the cells, then save.</span>
+              <span className="eyebrow">NEW ROW · {!draft.anchor ? "AT THE END" : draft.before ? "ABOVE" : "BELOW"}</span>
+              <span>{draft.anchor ? "Fill the cells, then save." : "Type or paste into the cells, then save."}</span>
               <button className="button primary" disabled={busy} onClick={() => void saveDraft()}>
                 Save record
               </button>
@@ -490,10 +500,17 @@ export function RecordTable({
           Loading records…
         </div>
       ) : (
-        <button className="add-row" onClick={onNew}>
+        <button
+          className="add-row"
+          onClick={() => {
+            // Selecting the new row's first cell lets typing or pasting start right away.
+            if (appendDraft() && fields[0]) {
+              cells.selectCells({ recordId: "draft", fieldId: fields[0].id }, { recordId: "draft", fieldId: fields[0].id });
+            }
+          }}
+        >
           <Plus size={14} />
           <span>Add a record</span>
-          <kbd>N</kbd>
         </button>
       )}
       {active && (
@@ -531,6 +548,11 @@ export function RecordTable({
 type GridItem =
   | { kind: "heading"; record: DataRecord; value: unknown; key: string; collapseKey: string; count: number; loaded: number }
   | { kind: "row"; record: DataRecord };
+// The stored form of an empty value, for fields missing from a record's values.
+function emptyValue(schema: FormSchema, fieldId: string) {
+  const field = schema.fields.find((f) => f.id === fieldId);
+  return field ? clearedValue(field) : null;
+}
 // Typed or composed text replaces the value of text and number cells; other types just open their editor.
 function seedFor(field: Field, typed: string): unknown {
   if (["short_text", "long_text", "url"].includes(field.type)) {

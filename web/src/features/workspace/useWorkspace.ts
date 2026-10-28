@@ -1,21 +1,29 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { aborted, api, message } from "../../api/client";
-import type { Catalogs, DataRecord, FormSchema, RecordPage, RelationCatalog, View, ViewConfig } from "../../api/types";
+import type { Catalogs, DataRecord, FormSchema, RelationCatalog, View, ViewConfig } from "../../api/types";
 import { relationIds } from "../records/values";
 import { clampColumnWidth, withColumnWidth } from "./columns";
+import { type LoadedRecords, loadRecords } from "./loadRecords";
 import { useColumnWidths } from "./useColumnWidths";
-export const emptyView: ViewConfig = { columns: [], filters: [], sort: null, group_by: null, freeze_first: true };
+export const emptyView: ViewConfig = { columns: [], filters: [], sort: null, group_by: null, freeze_first: true, open_at_end: false };
 export function useWorkspace(formId: string) {
   const [schema, setSchema] = useState<FormSchema>();
   const [views, setViews] = useState<View[]>([]);
   const [config, setConfig] = useState<ViewConfig>(emptyView);
   const [viewId, setViewId] = useState("");
-  const [page, setPage] = useState<RecordPage>({ records: [], groups: [], total: 0, next_cursor: null });
+  const [page, setPage] = useState<LoadedRecords>({ records: [], groups: [], total: 0, next_cursor: null, truncated: false });
   const [catalogs, setCatalogs] = useState<Catalogs>({});
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
-  const [cursor, setCursor] = useState(0);
+  // Bumped once per opened view whose saved setting asks to start at the last row.
+  const [endRequest, setEndRequest] = useState(0);
+  const shown = useRef("");
+  const opened = useRef("");
+  const viewState = useRef({ viewId, openAtEnd: !!config.open_at_end });
+  useEffect(() => {
+    viewState.current = { viewId, openAtEnd: !!config.open_at_end };
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
@@ -38,7 +46,6 @@ export function useWorkspace(formId: string) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setSearch(query);
-      setCursor(0);
     }, 220);
     return () => window.clearTimeout(timer);
   }, [query]);
@@ -68,7 +75,7 @@ export function useWorkspace(formId: string) {
       return;
     }
     const controller = new AbortController();
-    const params = new URLSearchParams({ limit: "50", cursor: String(cursor) });
+    const params = new URLSearchParams();
     if (search) {
       params.set("q", search);
     }
@@ -86,9 +93,34 @@ export function useWorkspace(formId: string) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError("");
-    api
-      .records(formId, params, controller.signal)
-      .then(setPage)
+    // A refresh swaps in the complete result at once, so the scroll position and cell selection survive it. A new
+    // query shows its first page while the rest loads.
+    const key = `${formId}?${params}`;
+    loadRecords(
+      (cursor, limit) => {
+        const chunk = new URLSearchParams(params);
+        chunk.set("cursor", String(cursor));
+        chunk.set("limit", String(limit));
+        return api.records(formId, chunk, controller.signal);
+      },
+      controller.signal,
+      (first) => {
+        if (shown.current !== key) {
+          setPage(first);
+        }
+      },
+    )
+      .then((loaded) => {
+        setPage(loaded);
+        shown.current = key;
+        const view = `${formId}:${viewState.current.viewId}`;
+        if (opened.current !== view) {
+          opened.current = view;
+          if (viewState.current.openAtEnd) {
+            setEndRequest((n) => n + 1);
+          }
+        }
+      })
       .catch((e) => {
         if (!aborted(e)) {
           setError(message(e));
@@ -100,7 +132,7 @@ export function useWorkspace(formId: string) {
         }
       });
     return () => controller.abort();
-  }, [schema, formId, search, cursor, filters, sort, groupBy, revision]);
+  }, [schema, formId, search, filters, sort, groupBy, revision]);
   useEffect(() => {
     if (!schema) {
       return;
@@ -118,7 +150,7 @@ export function useWorkspace(formId: string) {
       targets.map(async (id): Promise<[string, RelationCatalog]> => {
         const [targetSchema, targetPage] = await Promise.all([
           api.schema(id, controller.signal),
-          api.records(id, new URLSearchParams({ limit: "100" }), controller.signal),
+          api.records(id, new URLSearchParams({ limit: "500" }), controller.signal),
         ]);
         const referenced = schema.fields
           .filter((f) => f.config.target_form_id === id)
@@ -138,7 +170,6 @@ export function useWorkspace(formId: string) {
   }, [schema, page.records, revision]);
   function changeConfig(next: ViewConfig) {
     setConfig(next);
-    setCursor(0);
   }
   function selectView(id: string) {
     const view = views.find((v) => v.id === id);
@@ -161,8 +192,7 @@ export function useWorkspace(formId: string) {
     catalogs,
     query,
     setQuery,
-    cursor,
-    setCursor,
+    endRequest,
     loading,
     error,
     refresh,

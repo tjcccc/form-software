@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use form_domain::ApiError;
+use form_domain::{ApiError, RecordIssue};
 use form_persistence::StoreError;
 use serde::de::DeserializeOwned;
 pub struct HttpError(pub StatusCode, pub Box<ApiError>);
@@ -18,6 +18,7 @@ impl HttpError {
                 message: message.into(),
                 issues: vec![],
                 current: None,
+                records: vec![],
             }),
         )
     }
@@ -50,6 +51,7 @@ impl From<StoreError> for HttpError {
                     message: "Some fields need attention.".into(),
                     issues,
                     current: None,
+                    records: vec![],
                 }),
             ),
             StoreError::Conflict(current) => Self(
@@ -59,6 +61,41 @@ impl From<StoreError> for HttpError {
                     message: "This record has changed. Review the latest version before saving again.".into(),
                     issues: vec![],
                     current: Some(*current),
+                    records: vec![],
+                }),
+            ),
+            StoreError::BatchConflict(records) => {
+                let count = records.len();
+                Self(
+                    StatusCode::CONFLICT,
+                    Box::new(ApiError {
+                        code: "conflict".into(),
+                        message: format!(
+                            "{count} record{} changed elsewhere, so nothing was saved. Reload and try again.",
+                            if count == 1 { "" } else { "s" }
+                        ),
+                        issues: vec![],
+                        records: records
+                            .iter()
+                            .map(|r| RecordIssue {
+                                record_id: Some(r.id),
+                                create_index: None,
+                                field_id: None,
+                                message: "This record changed since it was loaded.".into(),
+                            })
+                            .collect(),
+                        current: records.into_iter().next(),
+                    }),
+                )
+            }
+            StoreError::BatchValidation(records) => Self(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Box::new(ApiError {
+                    code: "validation".into(),
+                    message: "Some records need attention, so nothing was saved.".into(),
+                    issues: vec![],
+                    current: None,
+                    records,
                 }),
             ),
             StoreError::Database(sqlx::Error::Database(ref e)) if e.is_unique_violation() => {

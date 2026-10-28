@@ -91,6 +91,24 @@ pub async fn update_record(
 ) -> HttpResult<Json<Record>> {
     Ok(Json(s.store.update_record(a, id, input).await?))
 }
+#[utoipa::path(post,path="/api/v1/forms/{form_id}/records/batch",params(("form_id"=Uuid,Path)),request_body=WriteRecords,responses((status=200,body=WrittenRecords),(status=409,body=ApiError),(status=422,body=ApiError)))]
+pub async fn write_records(
+    State(s): State<Arc<AppState>>,
+    Extension(a): Extension<Actor>,
+    Path(id): Path<Uuid>,
+    ApiJson(input): ApiJson<WriteRecords>,
+) -> HttpResult<Json<WrittenRecords>> {
+    Ok(Json(s.store.write_records(a, id, input).await?))
+}
+#[utoipa::path(post,path="/api/v1/forms/{form_id}/records/resolve",params(("form_id"=Uuid,Path)),request_body=ResolveRecords,responses((status=200,body=Vec<ResolvedLabel>)))]
+pub async fn resolve_records(
+    State(s): State<Arc<AppState>>,
+    Extension(a): Extension<Actor>,
+    Path(id): Path<Uuid>,
+    ApiJson(input): ApiJson<ResolveRecords>,
+) -> HttpResult<Json<Vec<ResolvedLabel>>> {
+    Ok(Json(s.store.resolve_labels(a, id, input.labels).await?))
+}
 #[utoipa::path(delete,path="/api/v1/records/{record_id}",params(("record_id"=Uuid,Path)),request_body=VersionCheck,responses((status=204),(status=409,body=ApiError)))]
 pub async fn archive_record(
     State(s): State<Arc<AppState>>,

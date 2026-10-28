@@ -1,4 +1,4 @@
-import type { KeyboardEvent, PointerEvent } from "react";
+import type { ClipboardEvent, CompositionEvent, InputEvent, KeyboardEvent, PointerEvent } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
@@ -19,20 +19,30 @@ import {
 
 const arrows: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
 // Airtable-style select-first grid: a click selects, a click on the already selected cell (or Enter/F2/typing) edits.
-// `onEdit` receives the typed character when typing started the edit, or "" when an input method is composing.
+// Keyboard focus sits in a hidden text field inside the active cell, so input methods can compose there and
+// clipboard events fire in every browser. `onEdit` receives the typed or composed text when typing started the edit.
 export function useCellSelection({
   axes,
   editing,
   onEdit,
+  onCopy,
+  onPaste,
+  onClear,
 }: {
   axes: GridAxes;
   editing: boolean;
   onEdit: (cell: CellRef, element: HTMLElement, typed?: string) => void;
+  onCopy?: (data: DataTransfer, cut: boolean) => void;
+  onPaste?: (data: DataTransfer) => void;
+  onClear?: () => void;
 }) {
   const [stored, setStored] = useState<CellSelection>();
+  const [composing, setComposing] = useState(false);
   const selection = reconcile(stored, axes);
   const range = selection && rangeOf(selection, axes);
   const elements = useRef(new Map<string, HTMLElement>());
+  const input = useRef<HTMLTextAreaElement>(null);
+  const composition = useRef(false);
   const press = useRef<{ key: string; wasSelected: boolean; moved: boolean }>(undefined);
   const dragging = useRef(false);
   const pending = useRef<"anchor" | "focus">(undefined);
@@ -50,17 +60,32 @@ export function useCellSelection({
   useLayoutEffect(() => {
     const target = pending.current;
     pending.current = undefined;
-    if (!target || !selection) {
-      return;
+    const anchor = selection && elements.current.get(cellKey(selection.anchor));
+    // Hand focus to the hidden field after keyboard moves, and after an editor returns focus to its cell.
+    if (!editing && input.current && (target || document.activeElement === anchor)) {
+      input.current.focus({ preventScroll: true });
     }
-    const anchor = elements.current.get(cellKey(selection.anchor));
-    anchor?.focus({ preventScroll: true });
-    elements.current.get(cellKey(selection[target]))?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (target && selection) {
+      elements.current.get(cellKey(selection[target]))?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
   });
   function select(next: CellSelection | undefined, focus: "anchor" | "focus" = "anchor") {
     if (next) {
       pending.current = focus;
       setStored(next);
+    }
+  }
+  function startEdit(typed?: string) {
+    const anchor = selection && elements.current.get(cellKey(selection.anchor));
+    if (selection && anchor) {
+      onEdit(selection.anchor, anchor, typed);
+    }
+  }
+  function takeTyped(field: HTMLTextAreaElement) {
+    const text = field.value;
+    field.value = "";
+    if (text) {
+      startEdit(text);
     }
   }
   function cellProps(cell: CellRef, row: number, col: number) {
@@ -74,7 +99,7 @@ export function useCellSelection({
           elements.current.delete(key);
         }
       },
-      tabIndex: active || (!selection && row === 0 && col === 0) ? 0 : -1,
+      tabIndex: !selection && row === 0 && col === 0 ? 0 : -1,
       "data-selected": (range && contains(range, row, col)) || undefined,
       "data-active": active || undefined,
       onPointerDown: (event: PointerEvent<HTMLElement>) => {
@@ -88,7 +113,7 @@ export function useCellSelection({
           return;
         }
         if (event.shiftKey && selection) {
-          // Keep focus on the anchor; a focus change would collapse the range.
+          // Keep focus in the anchor's field; a focus change would collapse the range.
           event.preventDefault();
           press.current = undefined;
           setStored({ anchor: selection.anchor, focus: cell });
@@ -96,8 +121,8 @@ export function useCellSelection({
         }
         press.current = { key, wasSelected: !!selection && isSingle(selection) && active, moved: false };
         dragging.current = true;
+        pending.current = "anchor";
         setStored(single(cell));
-        event.currentTarget.focus({ preventScroll: true });
       },
       onPointerEnter: () => {
         if (dragging.current && press.current && !editing) {
@@ -106,19 +131,72 @@ export function useCellSelection({
         }
       },
       onFocus: () => {
-        if (!editing && !active) {
-          setStored(single(cell));
+        if (editing) {
+          return;
+        }
+        if (active) {
+          input.current?.focus({ preventScroll: true });
+        } else {
+          select(single(cell));
         }
       },
-      onClick: (event: { currentTarget: HTMLElement }) => {
+      onClick: () => {
         const pressed = press.current;
         press.current = undefined;
         if (pressed?.key === key && pressed.wasSelected && !pressed.moved && !editing) {
-          onEdit(cell, event.currentTarget);
+          startEdit();
         }
       },
-      onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
-        if (editing || !selection) {
+    };
+  }
+  function clipboard(event: ClipboardEvent<HTMLTextAreaElement>, cut: boolean) {
+    event.preventDefault();
+    event.currentTarget.value = "";
+    if (selection && onCopy) {
+      onCopy(event.clipboardData, cut);
+    }
+  }
+  // Props for the hidden field rendered inside the active cell while it is not being edited.
+  function inputProps(label: string) {
+    return {
+      ref: input,
+      "aria-label": label,
+      rows: 1,
+      autoCapitalize: "off",
+      autoComplete: "off",
+      spellCheck: false,
+      // Writing assistants attach to text fields; this one is only a keyboard target.
+      "data-gramm": "false",
+      "data-gramm_editor": "false",
+      "data-enable-grammarly": "false",
+      "data-composing": composing || undefined,
+      onCompositionStart: () => {
+        composition.current = true;
+        setComposing(true);
+      },
+      onCompositionEnd: (event: CompositionEvent<HTMLTextAreaElement>) => {
+        composition.current = false;
+        setComposing(false);
+        takeTyped(event.currentTarget);
+      },
+      // Clipboard events reach the hidden field in every browser. The field itself never takes pasted text.
+      onCopy: (event: ClipboardEvent<HTMLTextAreaElement>) => clipboard(event, false),
+      onCut: (event: ClipboardEvent<HTMLTextAreaElement>) => clipboard(event, true),
+      onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => {
+        event.preventDefault();
+        if (selection && !composition.current) {
+          onPaste?.(event.clipboardData);
+        }
+      },
+      onInput: (event: InputEvent<HTMLTextAreaElement>) => {
+        if (!composition.current) {
+          takeTyped(event.currentTarget);
+        }
+      },
+      onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => {
+        // Keys that confirm or navigate an input-method candidate belong to the input method. Safari reports some of
+        // them only through the legacy 229 key code.
+        if (editing || !selection || composition.current || event.nativeEvent.isComposing || event.keyCode === 229) {
           return;
         }
         const shortcut = event.metaKey || event.ctrlKey;
@@ -136,23 +214,34 @@ export function useCellSelection({
             select(next);
           }
         } else if (event.key === "Enter" || event.key === "F2") {
-          // Buttons would also activate on Enter/Space; the grid owns those keys.
           event.preventDefault();
-          onEdit(selection.anchor, event.currentTarget);
-        } else if (event.key === " ") {
+          startEdit();
+        } else if (event.key === " " && !shortcut) {
+          // Reserved for expanding the record, as in Airtable; a space never starts an edit.
           event.preventDefault();
-        } else if (event.key === "Escape" && !isSingle(selection)) {
+        } else if (event.key === "Escape") {
+          // Escape collapses a range, then clears the selection so workspace shortcuts work again.
           event.preventDefault();
-          select(single(selection.anchor));
+          if (isSingle(selection)) {
+            event.currentTarget.blur();
+            setStored(undefined);
+          } else {
+            select(single(selection.anchor));
+          }
         } else if (shortcut && event.key.toLowerCase() === "a") {
           event.preventDefault();
           select(selectAll(axes));
-        } else if (event.nativeEvent.isComposing || event.key === "Process" || event.keyCode === 229) {
+        } else if (shortcut && ["c", "x"].includes(event.key.toLowerCase())) {
+          // Safari fires copy and cut only when the field has selected text, so give it a placeholder to copy.
+          const field = event.currentTarget;
+          field.value = " ";
+          field.select();
+          window.setTimeout(() => {
+            field.value = "";
+          });
+        } else if ((event.key === "Delete" || event.key === "Backspace") && !shortcut && !event.altKey) {
           event.preventDefault();
-          onEdit(selection.anchor, event.currentTarget, "");
-        } else if (event.key.length === 1 && !shortcut && !event.altKey) {
-          event.preventDefault();
-          onEdit(selection.anchor, event.currentTarget, event.key);
+          onClear?.();
         }
       },
     };
@@ -161,8 +250,8 @@ export function useCellSelection({
     selection,
     range,
     cellProps,
+    inputProps,
     selectColumn: (fieldId: string) => select(selectColumn(axes, fieldId)),
-    // Selects a cell without editing it, for example after an editor saves and hands over focus.
-    selectCell: (cell: CellRef) => select(single(cell)),
+    selectCells: (anchor: CellRef, focus: CellRef) => select({ anchor, focus }),
   };
 }

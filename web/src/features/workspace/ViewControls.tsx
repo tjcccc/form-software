@@ -93,6 +93,16 @@ export function ViewControls({
             Save changes to this view
           </button>
         )}
+        <div className="popover-divider" />
+        <button
+          className="menu-item"
+          aria-pressed={!!config.open_at_end}
+          title="Scroll to the last row when this view opens"
+          onClick={() => onChange({ ...config, open_at_end: !config.open_at_end })}
+        >
+          <span>Open at the last row</span>
+          {config.open_at_end && <Check size={14} />}
+        </button>
       </Popover>
       <span className="toolbar-divider" />
       <button type="button" className={`tool-button ${config.filters.length ? "active" : ""}`} aria-haspopup="dialog" onClick={onFilter}>

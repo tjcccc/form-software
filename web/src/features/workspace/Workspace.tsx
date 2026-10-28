@@ -1,7 +1,5 @@
 import {
   ArrowDownToLine,
-  ArrowLeft,
-  ArrowRight,
   ChevronRight,
   CircleHelp,
   Command,
@@ -268,7 +266,7 @@ export function Workspace({
                 catalogs={catalogs}
                 loading={loading}
                 selectedId={inspecting?.id}
-                offset={state.cursor}
+                endRequest={state.endRequest}
                 onSelect={select}
                 onNew={() => {
                   if (inspecting === undefined) {
@@ -314,38 +312,22 @@ export function Workspace({
               {duration && (
                 <>
                   <span className="footer-separator" />
-                  <span>Duration on this page</span>
+                  <span>Duration</span>
                   <strong>{formatDuration(totalMinutes)}</strong>
                 </>
               )}
             </div>
-            <div className="pagination">
-              <span>
-                {page.records.length ? `${state.cursor + 1}–${state.cursor + page.records.length}` : "0"} of {page.total}
-              </span>
-              <button
-                className="icon-button"
-                aria-label="Previous page"
-                disabled={loading || state.cursor === 0}
-                onClick={() => state.setCursor(Math.max(0, state.cursor - 50))}
-              >
-                <ArrowLeft size={13} />
-              </button>
-              <button
-                className="icon-button"
-                aria-label="Next page"
-                disabled={loading || page.next_cursor == null}
-                onClick={() => state.setCursor(page.next_cursor ?? 0)}
-              >
-                <ArrowRight size={13} />
-              </button>
-            </div>
+            {page.truncated && (
+              <div className="load-limit" role="status">
+                Showing the first {page.records.length.toLocaleString()} of {page.total.toLocaleString()}. Filter the view to see the rest.
+              </div>
+            )}
           </footer>
         </section>
         <footer className="workspace-bottom">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
           <span>
-            FormSoftware <span className="bottom-slash">/</span> 0.5.0
+            FormSoftware <span className="bottom-slash">/</span> 0.6.0
           </span>
         </footer>
       </div>
@@ -417,6 +399,8 @@ export function Workspace({
               ["Create a record", "N"],
               ["Save the open record / note cell", "⌘ / Ctrl + Enter"],
               ["Save cell / edit next cell", "Enter / Tab"],
+              ["Copy / cut / paste cells", "⌘ / Ctrl + C / X / V"],
+              ["Clear selected cells", "Delete"],
               ["Record actions", "Shift + F10"],
               ["Close a panel", "Esc"],
               ["Show this guide", "?"],

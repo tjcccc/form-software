@@ -148,6 +148,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/forms/{form_id}/records/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["write_records"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/forms/{form_id}/records/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolve_records"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/forms/{form_id}/schema": {
         parameters: {
             query?: never;
@@ -317,6 +349,8 @@ export interface components {
             current?: null | components["schemas"]["Record"];
             issues: components["schemas"]["FieldIssue"][];
             message: string;
+            /** @description Per-record problems from a batch write; empty for single-record operations. */
+            records?: components["schemas"]["RecordIssue"][];
         };
         Attachment: {
             content_type: string;
@@ -507,6 +541,15 @@ export interface components {
             count: number;
             value: unknown;
         };
+        /** @description A problem with one record in a batch write. Updates name their record; creates give their index in `creates`. */
+        RecordIssue: {
+            create_index?: number | null;
+            /** Format: uuid */
+            field_id?: string | null;
+            message: string;
+            /** Format: uuid */
+            record_id?: string | null;
+        };
         RecordPage: {
             groups?: components["schemas"]["RecordGroup"][];
             /** Format: int32 */
@@ -514,6 +557,33 @@ export interface components {
             records: components["schemas"]["Record"][];
             /** Format: int64 */
             total: number;
+        };
+        /** @description One record update inside a batch write. Values merge into the record, as with a single update. */
+        RecordPatch: {
+            /** Format: int32 */
+            expected_version: number;
+            /** Format: uuid */
+            record_id: string;
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Exact primary-name lookups in one target form, for pasted or imported relation text. */
+        ResolveRecords: {
+            labels: string[];
+        };
+        ResolvedLabel: {
+            label: string;
+            /**
+             * Format: int64
+             * @description Number of active records with this primary name.
+             */
+            matches: number;
+            /**
+             * Format: uuid
+             * @description Set only when exactly one active record has this primary name.
+             */
+            record_id?: string | null;
         };
         SaveView: {
             config: components["schemas"]["ViewConfig"];
@@ -577,6 +647,8 @@ export interface components {
             freeze_first?: boolean;
             /** Format: uuid */
             group_by?: string | null;
+            /** @description Opening the view scrolls to its last row, for append-style logs. */
+            open_at_end?: boolean;
             sort?: null | components["schemas"]["Sort"];
         };
         Workspace: {
@@ -584,6 +656,20 @@ export interface components {
             id: string;
             name: string;
             slug: string;
+        };
+        /**
+         * @description Update and create records of one form in a single transaction. Any validation failure or version conflict
+         *     rejects the whole write. Created records are appended to the end of manual order.
+         */
+        WriteRecords: {
+            creates?: components["schemas"]["CreateRecord"][];
+            updates?: components["schemas"]["RecordPatch"][];
+        };
+        WrittenRecords: {
+            /** @description Created records in request order. */
+            created: components["schemas"]["Record"][];
+            /** @description Updated records in request order. */
+            updated: components["schemas"]["Record"][];
         };
     };
     responses: never;
@@ -885,6 +971,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    write_records: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                form_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WriteRecords"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WrittenRecords"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    resolve_records: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                form_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveRecords"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolvedLabel"][];
                 };
             };
         };

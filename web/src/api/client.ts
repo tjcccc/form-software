@@ -9,11 +9,14 @@ import type {
   ImportPreview,
   ImportRequest,
   RecordPage,
+  ResolvedLabel,
   Session,
   UpdateField,
   Values,
   View,
   ViewConfig,
+  WriteRecords,
+  WrittenRecords,
 } from "./types";
 export class ApiError extends Error {
   status: number;
@@ -70,6 +73,10 @@ export const api = {
     request<DataRecord>(`/records/${record.id}/duplicate`, json("POST", { expected_version: record.version })),
   updateRecord: (record: DataRecord, values: Values) =>
     request<DataRecord>(`/records/${record.id}`, json("PATCH", { values, expected_version: record.version })),
+  // Atomic: one invalid or stale record rejects the whole write.
+  writeRecords: (formId: string, input: WriteRecords) => request<WrittenRecords>(`/forms/${formId}/records/batch`, json("POST", input)),
+  resolveRecords: (formId: string, labels: string[]) =>
+    request<ResolvedLabel[]>(`/forms/${formId}/records/resolve`, json("POST", { labels })),
   archiveRecord: (record: DataRecord) => request<void>(`/records/${record.id}`, json("DELETE", { expected_version: record.version })),
   views: (id: string, signal?: AbortSignal) => request<View[]>(`/forms/${id}/views`, { signal }),
   saveView: (id: string, name: string, config: ViewConfig) => request<View>(`/forms/${id}/views`, json("POST", { name, config })),

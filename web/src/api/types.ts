@@ -19,5 +19,12 @@ export type CreateField = Schemas["CreateField"];
 export type UpdateField = Schemas["UpdateField"];
 export type ImportRequest = Schemas["ImportRequest"];
 export type ImportPreview = Schemas["ImportPreview"];
+export type RecordIssue = Schemas["RecordIssue"];
+export type ResolvedLabel = Schemas["ResolvedLabel"];
+export type WriteRecords = Omit<Schemas["WriteRecords"], "updates" | "creates"> & {
+  updates?: { record_id: string; expected_version: number; values: Values }[];
+  creates?: { values: Values }[];
+};
+export type WrittenRecords = { updated: DataRecord[]; created: DataRecord[] };
 export type RelationCatalog = { schema: FormSchema; records: DataRecord[] };
 export type Catalogs = Record<string, RelationCatalog>;

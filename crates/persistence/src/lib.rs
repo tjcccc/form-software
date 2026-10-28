@@ -26,6 +26,11 @@ pub enum StoreError {
     Validation(Vec<FieldIssue>),
     #[error("This record changed since you opened it.")]
     Conflict(Box<Record>),
+    /// Records in a batch write that changed since they were loaded, in their latest versions.
+    #[error("Some records changed since you opened them.")]
+    BatchConflict(Vec<Record>),
+    #[error("Some records need attention.")]
+    BatchValidation(Vec<RecordIssue>),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
     #[error(transparent)]

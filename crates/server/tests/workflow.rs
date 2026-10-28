@@ -68,8 +68,8 @@ impl Api {
         .await
     }
 }
-#[sqlx::test(migrations = "../persistence/migrations")]
-async fn authenticated_record_workflow(pool: PgPool) {
+/// Starts the server against the disposable test database and signs in as its owner.
+async fn start(pool: &PgPool) -> (Server, Api, LoginResult, String, std::path::PathBuf) {
     let options = pool.connect_options();
     let db = options.get_database().expect("test database");
     assert!(
@@ -81,7 +81,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
     drop(listener);
     let password = Uuid::new_v4().to_string();
     let storage = std::env::temp_dir().join(format!("formsw-test-{}", Uuid::new_v4()));
-    let _server = Server(
+    let server = Server(
         Command::new(env!("CARGO_BIN_EXE_form-server"))
             .env("DATABASE_URL", options.to_url_lossy().as_str())
             .env("FORM_BIND", format!("127.0.0.1:{port}"))
@@ -123,10 +123,54 @@ async fn authenticated_record_workflow(pool: PgPool) {
         .await
         .expect("login contract");
     let api = Api {
-        client: client.clone(),
-        base: base.clone(),
-        token: login.token,
+        client,
+        base,
+        token: login.token.clone(),
     };
+    (server, api, login, password, storage)
+}
+/// Creates a second workspace with its own owner, who must not see the first workspace's resources.
+async fn second_workspace(pool: &PgPool, api: &Api, login: &LoginResult, password: &str) -> Api {
+    let other_user = Uuid::new_v4();
+    let other_workspace = Uuid::new_v4();
+    sqlx::query("INSERT INTO users(id,username,password_hash) SELECT $1,'other',password_hash FROM users WHERE id=$2")
+        .bind(other_user)
+        .bind(login.session.user.id)
+        .execute(pool)
+        .await
+        .expect("other user");
+    sqlx::query("INSERT INTO workspaces(id,slug,name) VALUES($1,'other','Other')")
+        .bind(other_workspace)
+        .execute(pool)
+        .await
+        .expect("other workspace");
+    sqlx::query("INSERT INTO workspace_memberships(workspace_id,user_id,role) VALUES($1,$2,'owner')")
+        .bind(other_workspace)
+        .bind(other_user)
+        .execute(pool)
+        .await
+        .expect("membership");
+    let other: LoginResult = api
+        .client
+        .post(format!("{}/api/v1/auth/login", api.base))
+        .json(&json!({"username":"other","password":password}))
+        .send()
+        .await
+        .expect("other login")
+        .json()
+        .await
+        .expect("other login contract");
+    Api {
+        client: api.client.clone(),
+        base: api.base.clone(),
+        token: other.token,
+    }
+}
+#[sqlx::test(migrations = "../persistence/migrations")]
+async fn authenticated_record_workflow(pool: PgPool) {
+    let (_server, api, login, password, storage) = start(&pool).await;
+    let client = api.client.clone();
+    let base = api.base.clone();
     let work = api.form("work", "standard").await;
     let options = api.form("types", "options").await;
     let projects = api.form("projects", "standard").await;
@@ -424,39 +468,7 @@ async fn authenticated_record_workflow(pool: PgPool) {
         StatusCode::CONFLICT
     );
     // A second workspace must not read, mutate, or reference the first workspace's resources.
-    let other_user = Uuid::new_v4();
-    let other_workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO users(id,username,password_hash) SELECT $1,'other',password_hash FROM users WHERE id=$2")
-        .bind(other_user)
-        .bind(login.session.user.id)
-        .execute(&pool)
-        .await
-        .expect("other user");
-    sqlx::query("INSERT INTO workspaces(id,slug,name) VALUES($1,'other','Other')")
-        .bind(other_workspace)
-        .execute(&pool)
-        .await
-        .expect("other workspace");
-    sqlx::query("INSERT INTO workspace_memberships(workspace_id,user_id,role) VALUES($1,$2,'owner')")
-        .bind(other_workspace)
-        .bind(other_user)
-        .execute(&pool)
-        .await
-        .expect("membership");
-    let other: LoginResult = client
-        .post(format!("{base}/api/v1/auth/login"))
-        .json(&json!({"username":"other","password":password}))
-        .send()
-        .await
-        .expect("other login")
-        .json()
-        .await
-        .expect("other login contract");
-    let other = Api {
-        client,
-        base,
-        token: other.token,
-    };
+    let other = second_workspace(&pool, &api, &login, &password).await;
     assert_eq!(
         other.request(Method::GET, &path, Value::Null).await.status(),
         StatusCode::NOT_FOUND
@@ -1017,6 +1029,199 @@ async fn authenticated_record_workflow(pool: PgPool) {
         .await
         .status(),
         StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let _ = std::fs::remove_dir_all(storage);
+}
+#[sqlx::test(migrations = "../persistence/migrations")]
+async fn batch_record_writes(pool: PgPool) {
+    let (_server, api, login, password, storage) = start(&pool).await;
+    let tasks = api.form("tasks", "standard").await;
+    let people = api.form("people", "standard").await;
+    let form = tasks.form.id;
+    let name = tasks.fields[0].id;
+    let person_name = people.fields[0].id;
+    let owner = api
+        .field(
+            form,
+            "owner",
+            "relation",
+            json!({"target_form_id":people.form.id,"cardinality":"one","presentation":"record_picker"}),
+        )
+        .await;
+    let ada = api.create(people.form.id, json!({person_name.to_string():"Ada"})).await;
+    api.create(people.form.id, json!({person_name.to_string():"Sam"})).await;
+    api.create(people.form.id, json!({person_name.to_string():"Sam"})).await;
+    let a = api.create(form, json!({name.to_string():"A"})).await;
+    let b = api.create(form, json!({name.to_string():"B"})).await;
+    let batch = format!("/api/v1/forms/{form}/records/batch");
+    let total = |page: RecordPage| page.total;
+    let count = || async {
+        total(
+            api.ok(Method::GET, &format!("/api/v1/forms/{form}/records"), Value::Null)
+                .await,
+        )
+    };
+    let version = |id: Uuid| {
+        let api = &api;
+        async move {
+            let record: Record = api.ok(Method::GET, &format!("/api/v1/records/{id}"), Value::Null).await;
+            record.version
+        }
+    };
+
+    // One invalid record rejects the whole batch, including valid updates and creates.
+    let response = api
+        .request(
+            Method::POST,
+            &batch,
+            json!({"updates":[
+                {"record_id":a.id,"expected_version":a.version,"values":{name.to_string():"A2"}},
+                {"record_id":b.id,"expected_version":b.version,"values":{name.to_string():null}}
+            ],"creates":[{"values":{name.to_string():"C"}}]}),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error: ApiError = response.json().await.expect("error contract");
+    assert!(
+        error
+            .records
+            .iter()
+            .all(|r| r.record_id == Some(b.id) && r.field_id == Some(name))
+    );
+    assert!(!error.records.is_empty());
+    assert_eq!(
+        (version(a.id).await, version(b.id).await, count().await),
+        (a.version, b.version, 2)
+    );
+
+    // A relation target from another form is caught during the write and still rolls everything back.
+    let response = api
+        .request(
+            Method::POST,
+            &batch,
+            json!({"updates":[{"record_id":a.id,"expected_version":a.version,"values":{name.to_string():"A2"}}],
+                   "creates":[{"values":{name.to_string():"C",owner.id.to_string():[b.id]}}]}),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error: ApiError = response.json().await.expect("error contract");
+    assert_eq!(error.records[0].create_index, Some(0));
+    assert_eq!((version(a.id).await, count().await), (a.version, 2));
+
+    // A stale version anywhere refuses the batch and reports the changed record.
+    let response = api
+        .request(
+            Method::POST,
+            &batch,
+            json!({"updates":[
+                {"record_id":a.id,"expected_version":a.version,"values":{name.to_string():"A2"}},
+                {"record_id":b.id,"expected_version":b.version - 1,"values":{name.to_string():"B2"}}
+            ]}),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error: ApiError = response.json().await.expect("error contract");
+    assert_eq!(
+        error.records.iter().map(|r| r.record_id).collect::<Vec<_>>(),
+        vec![Some(b.id)]
+    );
+    assert_eq!(error.current.map(|r| r.id), Some(b.id));
+    assert_eq!(version(a.id).await, a.version);
+
+    // Duplicate records, empty batches, and batches over the limit are refused before any work.
+    for body in [
+        json!({"updates":[
+            {"record_id":a.id,"expected_version":a.version,"values":{}},
+            {"record_id":a.id,"expected_version":a.version,"values":{}}
+        ]}),
+        json!({}),
+        json!({"creates":vec![json!({"values":{name.to_string():"x"}}); MAX_BATCH_RECORDS + 1]}),
+    ] {
+        assert_eq!(
+            api.request(Method::POST, &batch, body).await.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    assert_eq!(count().await, 2);
+
+    // A valid batch updates and creates together; creates append after existing manual order.
+    let written: WrittenRecords = api
+        .ok(
+            Method::POST,
+            &batch,
+            json!({"updates":[
+                {"record_id":a.id,"expected_version":a.version,"values":{name.to_string():"A2",owner.id.to_string():[ada.id]}},
+                {"record_id":b.id,"expected_version":b.version,"values":{name.to_string():"B2"}}
+            ],"creates":[{"values":{name.to_string():"C"}},{"values":{name.to_string():"D"}}]}),
+        )
+        .await;
+    assert_eq!(
+        written.updated.iter().map(|r| (r.id, r.version)).collect::<Vec<_>>(),
+        vec![(a.id, a.version + 1), (b.id, b.version + 1)]
+    );
+    assert_eq!(written.updated[0].values[&owner.id], json!([ada.id]));
+    let page: RecordPage = api
+        .ok(Method::GET, &format!("/api/v1/forms/{form}/records"), Value::Null)
+        .await;
+    let names: Vec<_> = page.records.iter().map(|r| r.values[&name].clone()).collect();
+    assert_eq!(names, vec![json!("A2"), json!("B2"), json!("C"), json!("D")]);
+
+    // Labels resolve by exact primary name: unique, missing, ambiguous, and case-sensitive.
+    let resolved: Vec<ResolvedLabel> = api
+        .ok(
+            Method::POST,
+            &format!("/api/v1/forms/{}/records/resolve", people.form.id),
+            json!({"labels":["Ada","Nobody","Sam","ada"]}),
+        )
+        .await;
+    assert_eq!(
+        resolved
+            .iter()
+            .map(|r| (r.label.as_str(), r.record_id, r.matches))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Ada", Some(ada.id), 1),
+            ("Nobody", None, 0),
+            ("Sam", None, 2),
+            ("ada", None, 0)
+        ]
+    );
+
+    // Another workspace can neither write these records nor resolve labels in this workspace's forms.
+    let other = second_workspace(&pool, &api, &login, &password).await;
+    let theirs = other.form("theirs", "standard").await;
+    assert_eq!(
+        other
+            .request(
+                Method::POST,
+                &batch,
+                json!({"creates":[{"values":{name.to_string():"intruder"}}]})
+            )
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        other
+            .request(
+                Method::POST,
+                &format!("/api/v1/forms/{}/records/batch", theirs.form.id),
+                json!({"updates":[{"record_id":a.id,"expected_version":a.version + 1,"values":{}}]})
+            )
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        other
+            .request(
+                Method::POST,
+                &format!("/api/v1/forms/{}/records/resolve", people.form.id),
+                json!({"labels":["Ada"]})
+            )
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
     );
     let _ = std::fs::remove_dir_all(storage);
 }

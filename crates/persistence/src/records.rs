@@ -19,7 +19,7 @@ impl Store {
         if filters.len() > 20 || query.q.as_ref().is_some_and(|q| q.len() > 500) {
             return Err(invalid("Query is too large."));
         }
-        let limit = query.limit.unwrap_or(50).clamp(1, 100);
+        let limit = query.limit.unwrap_or(50).clamp(1, 500);
         let offset = query.cursor.unwrap_or(0);
         if offset > 1_000_000 {
             return Err(invalid("Cursor exceeds the supported range."));
@@ -122,7 +122,7 @@ impl Store {
             issues(validate_values(&fields, &input.values, &[]))?;
             let id = Uuid::new_v4();
             let data = scalar_values(&fields, &input.values);
-            sqlx::query("INSERT INTO records(id,form_id,data,created_by,updated_by,position) VALUES ($1,$2,$3,$4,$4,(SELECT coalesce(min(position),0)-1 FROM records WHERE form_id=$2))")
+            sqlx::query("INSERT INTO records(id,form_id,data,created_by,updated_by,position) VALUES ($1,$2,$3,$4,$4,(SELECT coalesce(max(position),0)+1 FROM records WHERE form_id=$2))")
                 .bind(id).bind(form_id).bind(encode(data)?).bind(actor.user_id).execute(&mut *tx).await?;
             write_relations(&mut tx, actor, id, &fields, &input.values, &Values::new()).await?;
             ids.push(id);
@@ -252,6 +252,156 @@ impl Store {
             .await?;
         tx.commit().await?;
         self.record(actor, id).await
+    }
+    /// Applies record updates and appended creates for one form atomically. Every record is checked before anything
+    /// is written, so one conflict or invalid record rejects the whole batch.
+    pub async fn write_records(&self, actor: Actor, form_id: Uuid, input: WriteRecords) -> Result<WrittenRecords> {
+        let count = input.updates.len() + input.creates.len();
+        if count == 0 || count > MAX_BATCH_RECORDS {
+            return Err(invalid(format!(
+                "A batch write changes between 1 and {MAX_BATCH_RECORDS} records."
+            )));
+        }
+        let mut seen = std::collections::HashSet::new();
+        if input.updates.iter().any(|u| !seen.insert(u.record_id)) {
+            return Err(invalid("Each record can appear only once in a batch write."));
+        }
+        let mut tx = self.pool.begin().await?;
+        Self::lock_form(&mut tx, actor, form_id).await?;
+        let fields = self.fields(form_id).await?;
+        let mut conflicts = Vec::new();
+        let mut problems = Vec::new();
+        let mut planned = Vec::new();
+        let mut report = |record_id: Option<Uuid>, create_index: Option<usize>, issues: Vec<FieldIssue>| {
+            problems.extend(issues.into_iter().map(|issue| RecordIssue {
+                record_id,
+                create_index,
+                field_id: issue.field_id,
+                message: issue.message,
+            }));
+        };
+        for update in input.updates {
+            let current = self.record(actor, update.record_id).await?;
+            if current.form_id != form_id {
+                return Err(StoreError::NotFound);
+            }
+            if current.version != update.expected_version {
+                conflicts.push(current);
+                continue;
+            }
+            let mut found = validate_write_keys(&fields, &update.values);
+            let mut merged = current.values.clone();
+            merged.extend(update.values);
+            if found.is_empty() {
+                found = validate_values(&fields, &merged, &current.attachments);
+            }
+            report(Some(current.id), None, found);
+            planned.push((current, merged));
+        }
+        for (index, create) in input.creates.iter().enumerate() {
+            let mut found = validate_write_keys(&fields, &create.values);
+            if found.is_empty() {
+                found = validate_values(&fields, &create.values, &[]);
+            }
+            report(None, Some(index), found);
+        }
+        if !conflicts.is_empty() {
+            return Err(StoreError::BatchConflict(conflicts));
+        }
+        // Relation targets are checked during the writes; a failure there still rolls back the whole batch.
+        let mut relation_problems = Vec::new();
+        let mut updated = Vec::new();
+        if problems.is_empty() {
+            for (current, merged) in &planned {
+                match write_relations(&mut tx, actor, current.id, &fields, merged, &current.values).await {
+                    Err(StoreError::Validation(issues)) => {
+                        relation_problems.extend(issues.into_iter().map(|issue| RecordIssue {
+                            record_id: Some(current.id),
+                            create_index: None,
+                            field_id: issue.field_id,
+                            message: issue.message,
+                        }));
+                        continue;
+                    }
+                    other => other?,
+                }
+                sqlx::query("UPDATE records SET data=$2,version=version+1,updated_at=now(),updated_by=$3 WHERE id=$1")
+                    .bind(current.id)
+                    .bind(encode(scalar_values(&fields, merged))?)
+                    .bind(actor.user_id)
+                    .execute(&mut *tx)
+                    .await?;
+                updated.push(current.id);
+            }
+        }
+        let mut created = Vec::new();
+        if problems.is_empty() {
+            for (index, create) in input.creates.into_iter().enumerate() {
+                let id = Uuid::new_v4();
+                sqlx::query("INSERT INTO records(id,form_id,data,created_by,updated_by,position) VALUES ($1,$2,$3,$4,$4,(SELECT coalesce(max(position),0)+1 FROM records WHERE form_id=$2))")
+                    .bind(id).bind(form_id).bind(encode(scalar_values(&fields, &create.values))?).bind(actor.user_id).execute(&mut *tx).await?;
+                match write_relations(&mut tx, actor, id, &fields, &create.values, &Values::new()).await {
+                    Err(StoreError::Validation(issues)) => {
+                        relation_problems.extend(issues.into_iter().map(|issue| RecordIssue {
+                            record_id: None,
+                            create_index: Some(index),
+                            field_id: issue.field_id,
+                            message: issue.message,
+                        }));
+                    }
+                    other => other?,
+                }
+                created.push(id);
+            }
+        }
+        problems.extend(relation_problems);
+        if !problems.is_empty() {
+            return Err(StoreError::BatchValidation(problems));
+        }
+        tx.commit().await?;
+        let mut written = WrittenRecords {
+            updated: Vec::new(),
+            created: Vec::new(),
+        };
+        for id in updated {
+            written.updated.push(self.record(actor, id).await?);
+        }
+        for id in created {
+            written.created.push(self.record(actor, id).await?);
+        }
+        Ok(written)
+    }
+    /// Finds active records whose primary name equals each label exactly, matching CSV import semantics.
+    pub async fn resolve_labels(&self, actor: Actor, form_id: Uuid, labels: Vec<String>) -> Result<Vec<ResolvedLabel>> {
+        if labels.len() > MAX_BATCH_RECORDS {
+            return Err(invalid(format!("Resolve at most {MAX_BATCH_RECORDS} labels at once.")));
+        }
+        let schema = self.schema(actor, form_id).await?;
+        let name = schema
+            .fields
+            .iter()
+            .find(|f| f.key == "name")
+            .ok_or(invalid("The linked form has no Name field."))?;
+        let rows = sqlx::query("SELECT l.label, count(r.id) AS matches, (array_agg(r.id))[1] AS first FROM unnest($1::text[]) AS l(label) LEFT JOIN records r ON r.form_id=$2 AND r.deleted_at IS NULL AND r.data->>$3 = l.label GROUP BY l.label")
+            .bind(&labels).bind(form_id).bind(name.id.to_string()).fetch_all(&self.pool).await?;
+        let mut found = std::collections::HashMap::new();
+        for row in rows {
+            let label: String = row.try_get("label")?;
+            let matches: i64 = row.try_get("matches")?;
+            let first: Option<Uuid> = row.try_get("first")?;
+            found.insert(label, (matches, first));
+        }
+        Ok(labels
+            .into_iter()
+            .map(|label| {
+                let (matches, first) = found.get(&label).copied().unwrap_or((0, None));
+                ResolvedLabel {
+                    record_id: if matches == 1 { first } else { None },
+                    matches,
+                    label,
+                }
+            })
+            .collect())
     }
     pub async fn archive_record(&self, actor: Actor, id: Uuid, expected_version: i32) -> Result<()> {
         let current = self.record(actor, id).await?;

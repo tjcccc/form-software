@@ -1,4 +1,54 @@
 /* Cell editing follows the grid; menus float above the scroll container. */
+
+/* Selected range and active cell use ink, not the accent, so selection never reads as an error. The active
+   cell's ring replaces the focus outline. */
+.cell-button[data-selected] {
+  background: #e9ecdf;
+}
+
+.cell-button[data-active] {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+
+.cell-button[aria-disabled="true"] {
+  cursor: progress;
+}
+
+/* Cut cells stay outlined until the paste that moves them. */
+.cell-button[data-cut] {
+  outline: 1px dashed var(--ink);
+  outline-offset: -4px;
+}
+
+/* Keyboard target for the active cell. It stays invisible until an input method composes text, then shows the
+   composition in place over the cell. */
+.cell-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 15px 13px;
+  border: 0;
+  resize: none;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  font-size: 12px;
+  line-height: 16px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.cell-input:focus {
+  outline: none;
+}
+
+.cell-input[data-composing] {
+  opacity: 1;
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+
 .row-select {
   position: absolute;
   inset: 0;

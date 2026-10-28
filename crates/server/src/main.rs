@@ -84,6 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/forms/{id}/fields", post(routes::create_field))
         .route("/fields/{id}", patch(routes::update_field))
         .route("/forms/{id}/records", get(routes::records).post(routes::create_record))
+        .route("/forms/{id}/records/batch", post(routes::write_records))
+        .route("/forms/{id}/records/resolve", post(routes::resolve_records))
         .route(
             "/records/{id}",
             get(routes::record)

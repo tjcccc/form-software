@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Paperclip, Plus, SearchX, Trash2, X } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { Catalogs, DataRecord, Field, FormSchema, RecordPage, ViewConfig } from "../../api/types";
 import { FieldIcon } from "../../components/Icons";
@@ -8,11 +8,13 @@ import { columnLayouts, visibleFields } from "../workspace/columns";
 import type { ColumnAction } from "../workspace/useFieldActions";
 import type { CellRef } from "./cellSelection";
 import { ColumnResizeHandle } from "./ColumnResizeHandle";
+import { headingHeight, offsetsOf, rowHeight, segments, type WindowRange, windowRange } from "./gridWindow";
 import { groupKey, groupValue } from "./grouping";
 import { InlineCellEditor } from "./InlineCellEditor";
 import { Rating } from "./Rating";
 import { RecordContextMenu } from "./RecordContextMenu";
 import { useCellSelection } from "./useCellSelection";
+import { useGridClipboard } from "./useGridClipboard";
 import { useRecordGrid } from "./useRecordGrid";
 import { displayValue, relationIds, titleOf } from "./values";
 export function RecordTable({
@@ -22,7 +24,7 @@ export function RecordTable({
   catalogs,
   selectedId,
   loading,
-  offset,
+  endRequest,
   onSelect,
   onNew,
   onFieldAction,
@@ -41,7 +43,8 @@ export function RecordTable({
   catalogs: Catalogs;
   selectedId?: string;
   loading: boolean;
-  offset: number;
+  // Bumped when the view should open scrolled to its last row.
+  endRequest: number;
   onSelect: (record: DataRecord) => void;
   onNew: () => void;
   onAddField: () => void;
@@ -111,7 +114,86 @@ export function RecordTable({
         activate(record, field, element, typed ? seedFor(field, typed) : undefined);
       }
     },
+    onCopy: (data, cut) => clipboard.copy(data, cut),
+    onPaste: (data) => clipboard.paste(data),
+    onClear: () => clipboard.clear(),
   });
+  const clipboard = useGridClipboard({
+    schema,
+    rows: visibleRows,
+    fields,
+    range: cells.range,
+    catalogs,
+    blocked: !!draft || editingBlocked || busy,
+    onSaved,
+    onChanged,
+    onNotice,
+    onSelect: cells.selectCells,
+    rowNumber: (record) => (position.get(record.id) ?? 0) + 1,
+  });
+  const cutKeys = new Set(clipboard.cutCells?.map((c) => `${c.recordId}:${c.field.id}`));
+  const items: GridItem[] = [];
+  const position = new Map(records.map((r, i) => [r.id, i]));
+  const loadedIn = new Map<string, number>();
+  if (groupedField) {
+    for (const r of records) {
+      const key = groupKey(groupValue(r, groupedField));
+      loadedIn.set(key, (loadedIn.get(key) ?? 0) + 1);
+    }
+  }
+  rows.forEach((record, index) => {
+    const collapseKey = collapseKeyOf(record);
+    if (groupedField) {
+      const value = groupValue(record, groupedField);
+      const key = groupKey(value);
+      if (index === 0 || key !== groupKey(groupValue(rows[index - 1], groupedField))) {
+        const count = groups?.find((g) => groupKey(g.value) === key)?.count ?? 0;
+        items.push({ kind: "heading", record, value, key, collapseKey, count, loaded: loadedIn.get(key) ?? 0 });
+      }
+    }
+    if (!collapsed.includes(collapseKey)) {
+      items.push({ kind: "row", record });
+    }
+  });
+  const offsets = offsetsOf(items.map((item) => (item.kind === "heading" ? headingHeight : rowHeight)));
+  const itemOf = new Map(items.flatMap((item, index) => (item.kind === "row" ? [[item.record.id, index] as const] : [])));
+  const rowOf = new Map(visibleRows.map((r, i) => [r.id, i]));
+  const pinned = [
+    cells.selection?.anchor.recordId,
+    cells.selection?.focus.recordId,
+    active?.record.id,
+    draft?.record.id,
+    menu?.record.id,
+  ].map((id) => (id ? (itemOf.get(id) ?? -1) : -1));
+  const scroller = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLTableSectionElement>(null);
+  const [range, setRange] = useState<WindowRange>({ start: 0, end: 40 });
+  function measure() {
+    if (scroller.current && body.current) {
+      const top = scroller.current.getBoundingClientRect().top - body.current.getBoundingClientRect().top;
+      const next = windowRange(offsets, top, scroller.current.clientHeight);
+      setRange((old) => (old.start === next.start && old.end === next.end ? old : next));
+    }
+  }
+  useLayoutEffect(measure);
+  const latestMeasure = useRef(measure);
+  useLayoutEffect(() => {
+    latestMeasure.current = measure;
+  });
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) {
+      return;
+    }
+    const observer = new ResizeObserver(() => latestMeasure.current());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    if (endRequest && scroller.current) {
+      scroller.current.scrollTop = scroller.current.scrollHeight;
+    }
+  }, [endRequest]);
   const layouts = columnLayouts(schema, config);
   const widthOf = (field: Field) => liveWidths[field.id] ?? layouts.find((c) => c.field_id === field.id)?.width ?? 156;
   function clearPreview(id: string) {
@@ -124,10 +206,23 @@ export function RecordTable({
   }, [chosen.length, all]);
 
   return (
-    <div className="table-scroll" aria-busy={loading || busy}>
-      {(chosen.length > 0 || draft || error || busy) && (
+    <div className="table-scroll" ref={scroller} aria-busy={loading || busy || clipboard.busy} onScroll={measure}>
+      {(chosen.length > 0 || draft || error || busy || clipboard.busy || clipboard.pending) && (
         <div className="record-selection-bar" role="region" aria-label="Record selection and draft actions">
-          {draft ? (
+          {clipboard.pending ? (
+            <>
+              <span className="eyebrow">PASTE</span>
+              <span>
+                This paste adds {clipboard.pending.newRows} new {clipboard.pending.newRows === 1 ? "row" : "rows"} below the table.
+              </span>
+              <button className="button primary" disabled={clipboard.busy} onClick={() => void clipboard.confirm()}>
+                Add rows and paste
+              </button>
+              <button className="text-button" onClick={clipboard.cancel}>
+                Cancel
+              </button>
+            </>
+          ) : draft ? (
             <>
               <span className="eyebrow">NEW ROW · {draft.before ? "ABOVE" : "BELOW"}</span>
               <span>Fill the cells, then save.</span>
@@ -157,7 +252,7 @@ export function RecordTable({
               </button>
             </>
           ) : null}
-          {busy && <span role="status">Saving…</span>}
+          {(busy || clipboard.busy) && <span role="status">Saving…</span>}
           {error && (
             <span className="field-error" role="alert">
               {error}
@@ -168,6 +263,7 @@ export function RecordTable({
 
       <table
         className={`record-table ${config.freeze_first !== false ? "freeze-first" : ""}`}
+        aria-rowcount={items.length + 1}
         style={{ width: 100 + fields.reduce((total, field) => total + widthOf(field), 0), minWidth: 0 }}
       >
         <colgroup>
@@ -184,7 +280,7 @@ export function RecordTable({
                 ref={selectAll}
                 type="checkbox"
                 className="row-select select-all"
-                aria-label="Select all records on this page"
+                aria-label="Select all loaded records"
                 checked={all}
                 disabled={!records.length || busy}
                 onChange={() => setSelected(all ? [] : records.map((r) => r.id))}
@@ -253,116 +349,127 @@ export function RecordTable({
             </th>
           </tr>
         </thead>
-        <tbody>
-          {rows.map((record, index) => {
-            const value = groupedField ? groupValue(record, groupedField) : null;
-            const key = groupKey(value);
-            const start = !!groupedField && (index === 0 || key !== groupKey(groupValue(rows[index - 1], groupedField)));
-            const count = groups?.find((g) => groupKey(g.value) === key)?.count ?? 0;
-            const onPage = groupedField ? records.filter((r) => groupKey(groupValue(r, groupedField)) === key).length : 0;
-            const collapseKey = collapseKeyOf(record);
-            const rowIndex = visibleRows.indexOf(record);
-            const closed = collapsed.includes(collapseKey);
-            return (
-              <Fragment key={record.id}>
-                {start && (
-                  <tr className="group-heading">
-                    <th colSpan={fields.length + 2} scope="rowgroup">
-                      <button
-                        className="group-toggle"
-                        aria-expanded={!closed}
-                        onClick={() => setCollapsed((old) => (closed ? old.filter((k) => k !== collapseKey) : [...old, collapseKey]))}
-                      >
-                        {closed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                        <span className="eyebrow">{groupedField.name}</span>
-                        <strong>
-                          {groupedField.type === "attachment"
-                            ? `${value} files`
-                            : value == null || (Array.isArray(value) && !value.length)
-                              ? "Empty"
-                              : displayValue(groupedField, value, catalogs)}
-                        </strong>
-                        <span className="group-count">
-                          {onPage === count ? count : `${onPage} on page / ${count} total`}
-                          {draft && groupKey(groupValue(draft.record, groupedField)) === key ? " + draft" : ""}
-                        </span>
-                      </button>
-                    </th>
-                  </tr>
-                )}
-                {!closed && (
-                  <tr
-                    key={record.id}
-                    className={`${selectedId === record.id || selected.includes(record.id) ? "selected" : ""} ${record.id === "draft" ? "draft-row" : ""}`}
-                    aria-selected={selected.includes(record.id)}
-                    onContextMenu={(event) => {
-                      if (record.id === "draft" || active) {
-                        return;
+        <tbody ref={body}>
+          {segments(offsets, range, pinned).map((part, order) => {
+            if ("gap" in part) {
+              return (
+                <tr className="grid-spacer" key={`gap:${order}`} aria-hidden="true">
+                  <td colSpan={fields.length + 2} style={{ height: part.gap }} />
+                </tr>
+              );
+            }
+            const index = part.index;
+            const item = items[index];
+            if (item.kind === "heading" && groupedField) {
+              const { value } = item;
+              const closed = collapsed.includes(item.collapseKey);
+              return (
+                <tr className="group-heading" key={`heading:${item.record.id}`} aria-rowindex={index + 2}>
+                  <th colSpan={fields.length + 2} scope="rowgroup">
+                    <button
+                      className="group-toggle"
+                      aria-expanded={!closed}
+                      onClick={() =>
+                        setCollapsed((old) => (closed ? old.filter((k) => k !== item.collapseKey) : [...old, item.collapseKey]))
                       }
-                      event.preventDefault();
+                    >
+                      {closed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                      <span className="eyebrow">{groupedField.name}</span>
+                      <strong>
+                        {groupedField.type === "attachment"
+                          ? `${value} files`
+                          : value == null || (Array.isArray(value) && !value.length)
+                            ? "Empty"
+                            : displayValue(groupedField, value, catalogs)}
+                      </strong>
+                      <span className="group-count">
+                        {item.loaded === item.count ? item.count : `${item.loaded} loaded / ${item.count} total`}
+                        {draft && groupKey(groupValue(draft.record, groupedField)) === item.key ? " + draft" : ""}
+                      </span>
+                    </button>
+                  </th>
+                </tr>
+              );
+            }
+            const { record } = item;
+            return (
+              <tr
+                key={record.id}
+                aria-rowindex={index + 2}
+                className={`${selectedId === record.id || selected.includes(record.id) ? "selected" : ""} ${record.id === "draft" ? "draft-row" : ""}`}
+                aria-selected={selected.includes(record.id)}
+                onContextMenu={(event) => {
+                  if (record.id === "draft" || active) {
+                    return;
+                  }
+                  event.preventDefault();
+                  setMenu({
+                    record,
+                    x: event.clientX,
+                    y: event.clientY,
+                    anchor: (event.target as HTMLElement).closest<HTMLElement>("button, input") ?? event.currentTarget,
+                  });
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                    event.preventDefault();
+                    const rect = event.target instanceof HTMLElement ? event.target.getBoundingClientRect() : null;
+                    if (rect && record.id !== "draft") {
                       setMenu({
                         record,
-                        x: event.clientX,
-                        y: event.clientY,
+                        x: rect.left,
+                        y: rect.bottom,
                         anchor: (event.target as HTMLElement).closest<HTMLElement>("button, input") ?? event.currentTarget,
                       });
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-                        event.preventDefault();
-                        const rect = event.target instanceof HTMLElement ? event.target.getBoundingClientRect() : null;
-                        if (rect && record.id !== "draft") {
-                          setMenu({
-                            record,
-                            x: rect.left,
-                            y: rect.bottom,
-                            anchor: (event.target as HTMLElement).closest<HTMLElement>("button, input") ?? event.currentTarget,
-                          });
-                        }
-                      }
-                    }}
+                    }
+                  }
+                }}
+              >
+                <td className="row-index">
+                  {record.id === "draft" ? (
+                    <span className="eyebrow">+</span>
+                  ) : (
+                    <>
+                      <span className="row-number">{String((position.get(record.id) ?? 0) + 1).padStart(2, "0")}</span>
+                      <input
+                        type="checkbox"
+                        className="row-select"
+                        aria-label={`Select record ${(position.get(record.id) ?? 0) + 1}`}
+                        checked={selected.includes(record.id)}
+                        disabled={busy}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setSelected((old) => (checked ? [...old, record.id] : old.filter((id) => id !== record.id)));
+                        }}
+                      />
+                    </>
+                  )}
+                </td>
+                {fields.map((field, fieldIndex) => (
+                  <td
+                    key={field.id}
+                    className={`${fieldIndex === 0 ? "primary-cell first-data-column" : ""} ${field.type === "duration" || field.type === "integer" || field.type === "decimal" ? "numeric-cell" : ""}`}
                   >
-                    <td className="row-index">
-                      {record.id === "draft" ? (
-                        <span className="eyebrow">+</span>
-                      ) : (
-                        <>
-                          <span className="row-number">
-                            {String(offset + records.findIndex((r) => r.id === record.id) + 1).padStart(2, "0")}
-                          </span>
-                          <input
-                            type="checkbox"
-                            className="row-select"
-                            aria-label={`Select record ${offset + index + 1}`}
-                            checked={selected.includes(record.id)}
-                            disabled={busy}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setSelected((old) => (checked ? [...old, record.id] : old.filter((id) => id !== record.id)));
-                            }}
-                          />
-                        </>
+                    <button
+                      className="cell-button"
+                      aria-label={`${titleOf(record, schema)}, ${field.name}`}
+                      aria-disabled={busy || clipboard.busy || undefined}
+                      data-cut={cutKeys.has(`${record.id}:${field.id}`) || undefined}
+                      {...cells.cellProps(
+                        { recordId: record.id, fieldId: field.id } satisfies CellRef,
+                        rowOf.get(record.id) ?? -1,
+                        fieldIndex,
                       )}
-                    </td>
-                    {fields.map((field, fieldIndex) => (
-                      <td
-                        key={field.id}
-                        className={`${fieldIndex === 0 ? "primary-cell first-data-column" : ""} ${field.type === "duration" || field.type === "integer" || field.type === "decimal" ? "numeric-cell" : ""}`}
-                      >
-                        <button
-                          className="cell-button"
-                          aria-label={`${titleOf(record, schema)}, ${field.name}`}
-                          aria-disabled={busy || undefined}
-                          {...cells.cellProps({ recordId: record.id, fieldId: field.id } satisfies CellRef, rowIndex, fieldIndex)}
-                        >
-                          <Cell field={field} record={record} catalogs={catalogs} />
-                        </button>
-                      </td>
-                    ))}
-                    <td />
-                  </tr>
-                )}
-              </Fragment>
+                    >
+                      <Cell field={field} record={record} catalogs={catalogs} />
+                    </button>
+                    {!active && cells.selection?.anchor.recordId === record.id && cells.selection.anchor.fieldId === field.id && (
+                      <textarea className="cell-input" {...cells.inputProps(`Selected cell: ${titleOf(record, schema)}, ${field.name}`)} />
+                    )}
+                  </td>
+                ))}
+                <td />
+              </tr>
             );
           })}
         </tbody>
@@ -421,15 +528,21 @@ export function RecordTable({
     </div>
   );
 }
-// Typing on a selected cell seeds text and number editors; other types just open their editor.
+type GridItem =
+  | { kind: "heading"; record: DataRecord; value: unknown; key: string; collapseKey: string; count: number; loaded: number }
+  | { kind: "row"; record: DataRecord };
+// Typed or composed text replaces the value of text and number cells; other types just open their editor.
 function seedFor(field: Field, typed: string): unknown {
   if (["short_text", "long_text", "url"].includes(field.type)) {
     return typed;
   }
-  if (/^\d$/.test(typed) && !field.config.rating) {
-    return field.type === "decimal" ? typed : field.type === "integer" || field.type === "duration" ? Number(typed) : undefined;
+  if (field.config.rating) {
+    return undefined;
   }
-  return undefined;
+  if ((field.type === "integer" || field.type === "duration") && /^\d+$/.test(typed)) {
+    return Number(typed);
+  }
+  return field.type === "decimal" && /^-?\d+(\.\d*)?$/.test(typed) ? typed : undefined;
 }
 function Cell({ field, record, catalogs }: { field: Field; record: DataRecord; catalogs: Catalogs }) {
   const value = record.values[field.id];

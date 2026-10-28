@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.5.0"
+    "version": "0.6.0"
   },
   "paths": {
     "/api/v1/attachments/{attachment_id}": {
@@ -549,6 +549,127 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/forms/{form_id}/records/batch": {
+      "post": {
+        "tags": [
+          "crate::routes"
+        ],
+        "operationId": "write_records",
+        "parameters": [
+          {
+            "name": "form_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteRecords"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WrittenRecords"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/forms/{form_id}/records/resolve": {
+      "post": {
+        "tags": [
+          "crate::routes"
+        ],
+        "operationId": "resolve_records",
+        "parameters": [
+          {
+            "name": "form_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveRecords"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResolvedLabel"
+                  }
                 }
               }
             }
@@ -1237,6 +1358,13 @@
           },
           "message": {
             "type": "string"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordIssue"
+            },
+            "description": "Per-record problems from a batch write; empty for single-record operations."
           }
         }
       },
@@ -1937,6 +2065,39 @@
           "value": {}
         }
       },
+      "RecordIssue": {
+        "type": "object",
+        "description": "A problem with one record in a batch write. Updates name their record; creates give their index in `creates`.",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "create_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "field_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "message": {
+            "type": "string"
+          },
+          "record_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "RecordPage": {
         "type": "object",
         "required": [
@@ -1967,6 +2128,74 @@
           "total": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "RecordPatch": {
+        "type": "object",
+        "description": "One record update inside a batch write. Values merge into the record, as with a single update.",
+        "required": [
+          "record_id",
+          "values",
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "record_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResolveRecords": {
+        "type": "object",
+        "description": "Exact primary-name lookups in one target form, for pasted or imported relation text.",
+        "required": [
+          "labels"
+        ],
+        "properties": {
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResolvedLabel": {
+        "type": "object",
+        "required": [
+          "label",
+          "matches"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "matches": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of active records with this primary name."
+          },
+          "record_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Set only when exactly one active record has this primary name."
           }
         }
       },
@@ -2210,6 +2439,10 @@
             ],
             "format": "uuid"
           },
+          "open_at_end": {
+            "type": "boolean",
+            "description": "Opening the view scrolls to its last row, for append-style logs."
+          },
           "sort": {
             "oneOf": [
               {
@@ -2240,6 +2473,48 @@
           },
           "slug": {
             "type": "string"
+          }
+        }
+      },
+      "WriteRecords": {
+        "type": "object",
+        "description": "Update and create records of one form in a single transaction. Any validation failure or version conflict\nrejects the whole write. Created records are appended to the end of manual order.",
+        "properties": {
+          "creates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateRecord"
+            }
+          },
+          "updates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordPatch"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "WrittenRecords": {
+        "type": "object",
+        "required": [
+          "updated",
+          "created"
+        ],
+        "properties": {
+          "created": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Record"
+            },
+            "description": "Created records in request order."
+          },
+          "updated": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Record"
+            },
+            "description": "Updated records in request order."
           }
         }
       }

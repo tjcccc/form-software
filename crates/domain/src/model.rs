@@ -312,6 +312,9 @@ pub struct ViewConfig {
     #[serde(default)]
     #[schema(required = true)]
     pub filters: Vec<Filter>,
+    /// Opening the view scrolls to its last row, for append-style logs.
+    #[serde(default)]
+    pub open_at_end: bool,
 }
 impl Default for ViewConfig {
     fn default() -> Self {
@@ -321,6 +324,7 @@ impl Default for ViewConfig {
             columns: vec![],
             sort: None,
             filters: vec![],
+            open_at_end: false,
         }
     }
 }
@@ -360,6 +364,59 @@ pub struct ApiError {
     pub message: String,
     pub issues: Vec<FieldIssue>,
     pub current: Option<Record>,
+    /// Per-record problems from a batch write; empty for single-record operations.
+    #[serde(default)]
+    pub records: Vec<RecordIssue>,
+}
+/// A problem with one record in a batch write. Updates name their record; creates give their index in `creates`.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecordIssue {
+    pub record_id: Option<Uuid>,
+    pub create_index: Option<usize>,
+    pub field_id: Option<Uuid>,
+    pub message: String,
+}
+/// Most records one batch write may update and create together.
+pub const MAX_BATCH_RECORDS: usize = 500;
+/// One record update inside a batch write. Values merge into the record, as with a single update.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RecordPatch {
+    pub record_id: Uuid,
+    #[schema(value_type = BTreeMap<String, serde_json::Value>)]
+    pub values: Values,
+    pub expected_version: i32,
+}
+/// Update and create records of one form in a single transaction. Any validation failure or version conflict
+/// rejects the whole write. Created records are appended to the end of manual order.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WriteRecords {
+    #[serde(default)]
+    pub updates: Vec<RecordPatch>,
+    #[serde(default)]
+    pub creates: Vec<CreateRecord>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct WrittenRecords {
+    /// Updated records in request order.
+    pub updated: Vec<Record>,
+    /// Created records in request order.
+    pub created: Vec<Record>,
+}
+/// Exact primary-name lookups in one target form, for pasted or imported relation text.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ResolveRecords {
+    pub labels: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ResolvedLabel {
+    pub label: String,
+    /// Set only when exactly one active record has this primary name.
+    pub record_id: Option<Uuid>,
+    /// Number of active records with this primary name.
+    pub matches: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -75,6 +75,7 @@ impl Client {
                 message: format!("Server returned HTTP {}.", status.as_u16()),
                 issues: vec![],
                 current: None,
+                records: vec![],
             });
             return Err(ClientError::Api {
                 status: status.as_u16(),

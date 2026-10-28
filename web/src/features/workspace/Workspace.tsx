@@ -64,7 +64,9 @@ export function Workspace({
     const key = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       const editing = ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable;
+      // The grid claims keys it handles (typing on a selected cell edits it), so they do not trigger shortcuts.
       if (
+        event.defaultPrevented ||
         editing ||
         target.closest(".inline-cell-editor, .record-context-menu") ||
         document.querySelector("dialog[open]") ||
@@ -343,7 +345,7 @@ export function Workspace({
         <footer className="workspace-bottom">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
           <span>
-            FormSoftware <span className="bottom-slash">/</span> 0.4.2
+            FormSoftware <span className="bottom-slash">/</span> 0.5.0
           </span>
         </footer>
       </div>
@@ -426,7 +428,8 @@ export function Workspace({
             ))}
           </div>
           <p className="shortcut-note">
-            Click or press Enter on a cell to edit it. Escape cancels the cell edit. Right-click a row for its editor and record actions.
+            Click a cell to select it; click it again, press Enter, or start typing to edit. Arrow keys move, Shift extends the selection,
+            and Escape cancels an edit. Right-click a row for its editor and record actions.
           </p>
         </Dialog>
       )}

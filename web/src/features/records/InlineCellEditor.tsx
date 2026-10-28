@@ -13,6 +13,7 @@ export function InlineCellEditor({
   anchor,
   catalogs,
   draft,
+  seed,
   onSaved,
   onClose,
 }: {
@@ -21,11 +22,12 @@ export function InlineCellEditor({
   anchor: HTMLElement;
   catalogs: Catalogs;
   draft: boolean;
+  seed?: unknown;
   onSaved: (record: DataRecord) => void;
   onClose: () => void;
 }) {
   const [record, setRecord] = useState(initial);
-  const [value, setValue] = useState(initial.values[field.id]);
+  const [value, setValue] = useState(seed === undefined ? initial.values[field.id] : seed);
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState<DataRecord>();
   const [busy, setBusy] = useState(false);
@@ -80,10 +82,13 @@ export function InlineCellEditor({
     const input =
       ref.current?.querySelector<HTMLElement>("input:not([type=file]), textarea") ?? ref.current?.querySelector<HTMLElement>("button");
     input?.focus();
-    if (input instanceof HTMLInputElement && ["text", "url", "number"].includes(input.type)) {
+    if (seed !== undefined && (input instanceof HTMLTextAreaElement || (input instanceof HTMLInputElement && input.type !== "number"))) {
+      // Typing started this edit: keep the typed character and continue after it.
+      input.setSelectionRange(input.value.length, input.value.length);
+    } else if (input instanceof HTMLInputElement && ["text", "url", "number"].includes(input.type)) {
       input.select();
     }
-  }, []);
+  }, [seed]);
   useEffect(() => {
     if (error && !busy) {
       ref.current?.querySelector<HTMLElement>(conflict ? "button:not(:disabled)" : "input, textarea, button")?.focus();
@@ -113,6 +118,10 @@ export function InlineCellEditor({
       void save().then((ok) => {
         if (ok && target?.isConnected) {
           target.focus();
+          // Grid cells are selected by focus; a second click is what edits them.
+          if (target.classList.contains("cell-button")) {
+            return;
+          }
           if (context) {
             target.dispatchEvent(
               new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: event.clientX, clientY: event.clientY }),
@@ -195,7 +204,6 @@ export function InlineCellEditor({
           void save().then((ok) => {
             if (ok) {
               (next ?? anchor).focus();
-              next?.click();
             }
           });
         }

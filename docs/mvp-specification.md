@@ -157,9 +157,10 @@ No computed/formula fields, script engine, rollups, advanced workflows, or compl
 - Basic create/edit/delete-or-archive records, confirmation for destructive actions.
 - Attachment upload/download/delete with file-size bounds and server-side authorization.
 - Clear loading/error/validation/conflict handling and keyboard basics.
+- Amended 2026-10-28: the Table View grid targets Airtable-grade daily editing, replacing the earlier "avoid elaborate grid editing" non-goal. Cells are selected before they are edited, ranges can be selected, copied, cut, pasted, and cleared, and grid edits can be undone and redone. A multi-cell paste is all-or-nothing: if any target record fails validation or changed since it was loaded, the whole paste is refused. Interaction rules live in `spec/ui.md`.
 - CSV import for migration with preview/mapping/validation/dry-run and error report. Resolve relational values to target records explicitly; don't silently create duplicates or guess ambiguous mappings.
 
-Avoid spreadsheet formulas, arbitrary cell computation, elaborate grid editing, Kanban/calendar/timeline/dashboard builders, and UI automation designers.
+Avoid spreadsheet formulas, arbitrary cell computation, Kanban/calendar/timeline/dashboard builders, and UI automation designers.
 
 ### 7.2 GPUI skeleton with meaningful E2E
 

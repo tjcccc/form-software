@@ -6,11 +6,13 @@ import { FieldIcon } from "../../components/Icons";
 import { ColumnMenu } from "../workspace/ColumnMenu";
 import { columnLayouts, visibleFields } from "../workspace/columns";
 import type { ColumnAction } from "../workspace/useFieldActions";
+import type { CellRef } from "./cellSelection";
 import { ColumnResizeHandle } from "./ColumnResizeHandle";
 import { groupKey, groupValue } from "./grouping";
 import { InlineCellEditor } from "./InlineCellEditor";
 import { Rating } from "./Rating";
 import { RecordContextMenu } from "./RecordContextMenu";
+import { useCellSelection } from "./useCellSelection";
 import { useRecordGrid } from "./useRecordGrid";
 import { displayValue, relationIds, titleOf } from "./values";
 export function RecordTable({
@@ -97,6 +99,19 @@ export function RecordTable({
       }
     }
   }
+  const collapseKeyOf = (record: DataRecord) => `${groupedField?.id}:${groupKey(groupedField ? groupValue(record, groupedField) : null)}`;
+  const visibleRows = rows.filter((record) => !collapsed.includes(collapseKeyOf(record)));
+  const cells = useCellSelection({
+    axes: { rows: visibleRows.map((r) => r.id), columns: fields.map((f) => f.id) },
+    editing: !!active,
+    onEdit: (cell, element, typed) => {
+      const record = rows.find((r) => r.id === cell.recordId);
+      const field = fields.find((f) => f.id === cell.fieldId);
+      if (record && field) {
+        activate(record, field, element, typed ? seedFor(field, typed) : undefined);
+      }
+    },
+  });
   const layouts = columnLayouts(schema, config);
   const widthOf = (field: Field) => liveWidths[field.id] ?? layouts.find((c) => c.field_id === field.id)?.width ?? 156;
   function clearPreview(id: string) {
@@ -187,25 +202,32 @@ export function RecordTable({
                 onContextMenu={(e) => {
                   e.preventDefault();
                   if (!active) {
-                    setColumnMenu({ field, anchor: e.currentTarget.querySelector("button")!, x: e.clientX, y: e.clientY });
+                    setColumnMenu({ field, anchor: e.currentTarget.querySelector(".column-menu-button")!, x: e.clientX, y: e.clientY });
                   }
                 }}
                 aria-sort={config.sort?.field_id === field.id ? (config.sort.descending ? "descending" : "ascending") : "none"}
               >
                 <button
                   className="column-heading"
-                  aria-label={`${field.name} column menu`}
-                  aria-haspopup="menu"
-                  disabled={busy || loading}
-                  onClick={(e) => {
-                    const r = e.currentTarget.getBoundingClientRect();
-                    setColumnMenu({ field, anchor: e.currentTarget, x: r.left, y: r.bottom });
-                  }}
+                  aria-label={`Select ${field.name} column`}
+                  disabled={loading || !!active}
+                  onClick={() => cells.selectColumn(field.id)}
                 >
                   <FieldIcon type={field.type} config={field.config} />
                   <span>{field.name}</span>
                   {config.sort?.field_id === field.id && (config.sort.descending ? <ArrowDown size={13} /> : <ArrowUp size={13} />)}
-                  <ChevronDown size={12} className="column-menu-chevron" />
+                </button>
+                <button
+                  className="column-menu-button"
+                  aria-label={`${field.name} column menu`}
+                  aria-haspopup="menu"
+                  disabled={busy || loading}
+                  onClick={(e) => {
+                    const r = e.currentTarget.closest("th")!.getBoundingClientRect();
+                    setColumnMenu({ field, anchor: e.currentTarget, x: r.left, y: r.bottom });
+                  }}
+                >
+                  <ChevronDown size={12} />
                 </button>
                 <ColumnResizeHandle
                   name={field.name}
@@ -238,7 +260,8 @@ export function RecordTable({
             const start = !!groupedField && (index === 0 || key !== groupKey(groupValue(rows[index - 1], groupedField)));
             const count = groups?.find((g) => groupKey(g.value) === key)?.count ?? 0;
             const onPage = groupedField ? records.filter((r) => groupKey(groupValue(r, groupedField)) === key).length : 0;
-            const collapseKey = `${groupedField?.id}:${key}`;
+            const collapseKey = collapseKeyOf(record);
+            const rowIndex = visibleRows.indexOf(record);
             const closed = collapsed.includes(collapseKey);
             return (
               <Fragment key={record.id}>
@@ -328,9 +351,9 @@ export function RecordTable({
                       >
                         <button
                           className="cell-button"
-                          onClick={(e) => activate(record, field, e.currentTarget)}
-                          aria-label={`Edit ${titleOf(record, schema)}, ${field.name}`}
-                          disabled={busy}
+                          aria-label={`${titleOf(record, schema)}, ${field.name}`}
+                          aria-disabled={busy || undefined}
+                          {...cells.cellProps({ recordId: record.id, fieldId: field.id } satisfies CellRef, rowIndex, fieldIndex)}
                         >
                           <Cell field={field} record={record} catalogs={catalogs} />
                         </button>
@@ -374,6 +397,7 @@ export function RecordTable({
           anchor={active.anchor}
           catalogs={catalogs}
           draft={active.record.id === "draft"}
+          seed={active.seed}
           onSaved={saved}
           onClose={closeCell}
         />
@@ -396,6 +420,16 @@ export function RecordTable({
       </div>
     </div>
   );
+}
+// Typing on a selected cell seeds text and number editors; other types just open their editor.
+function seedFor(field: Field, typed: string): unknown {
+  if (["short_text", "long_text", "url"].includes(field.type)) {
+    return typed;
+  }
+  if (/^\d$/.test(typed) && !field.config.rating) {
+    return field.type === "decimal" ? typed : field.type === "integer" || field.type === "duration" ? Number(typed) : undefined;
+  }
+  return undefined;
 }
 function Cell({ field, record, catalogs }: { field: Field; record: DataRecord; catalogs: Catalogs }) {
   const value = record.values[field.id];

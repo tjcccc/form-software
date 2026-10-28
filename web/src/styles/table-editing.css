@@ -80,7 +80,7 @@
 .inline-cell-editor {
   position: fixed;
   z-index: 65;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--ink);
   background: var(--paper);
   color: var(--ink);
   box-shadow: 3px 3px 0 #292c2912;
@@ -250,13 +250,25 @@
   cursor: default;
 }
 
-.column-menu-chevron {
-  margin-left: auto;
+.column-menu-button {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
   opacity: 0.4;
 }
 
-.column-heading:hover .column-menu-chevron {
+.resizable-column:hover .column-menu-button,
+.column-menu-button:focus-visible {
   opacity: 1;
+}
+
+.column-menu-button:hover:not(:disabled) {
+  background: #e2e6d6;
 }
 
 .record-table.freeze-first .row-index {

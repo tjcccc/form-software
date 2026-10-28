@@ -24,7 +24,7 @@ export function useRecordGrid({
   onNotice: (notice: string) => void;
   editingBlocked: boolean;
 }) {
-  const [active, setActive] = useState<{ record: DataRecord; field: Field; anchor: HTMLElement }>();
+  const [active, setActive] = useState<{ record: DataRecord; field: Field; anchor: HTMLElement; seed?: unknown }>();
   const [menu, setMenu] = useState<{ record: DataRecord; x: number; y: number; anchor: HTMLElement }>();
   const [selected, setSelected] = useState<string[]>([]);
   const [draft, setDraft] = useState<{ record: DataRecord; anchor: DataRecord; before: boolean }>();
@@ -62,12 +62,13 @@ export function useRecordGrid({
           .join(" ")
       : message(error);
   }
-  function activate(record: DataRecord, field: Field, anchor: HTMLElement) {
+  // `seed` replaces the cell value when typing started the edit.
+  function activate(record: DataRecord, field: Field, anchor: HTMLElement, seed?: unknown) {
     if (busy || editingBlocked) {
       onNotice("Close the record editor before editing cells.");
       return;
     }
-    setActive({ record, field, anchor });
+    setActive({ record, field, anchor, seed });
   }
   function saved(record: DataRecord) {
     if (record.id === draft?.record.id) {

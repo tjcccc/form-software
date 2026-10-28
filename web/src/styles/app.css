@@ -25,6 +25,10 @@
   text-decoration: none;
 }
 
+.brand svg {
+  color: var(--accent);
+}
+
 .brand > span {
   position: relative;
   font-size: 14px;

@@ -1,4 +1,4 @@
-import type { DataRecord, Field, ResolvedLabel, Values, WriteRecords } from "../../api/types";
+import type { DataRecord, Field, FormSchema, ResolvedLabel, Values, WriteRecords } from "../../api/types";
 import type { CellRange } from "./cellSelection";
 import { type ParsedCell, parseText } from "./clipboardText";
 
@@ -33,6 +33,19 @@ export function pasteTargets(clip: ClipCell[][], range: CellRange, rowCount: num
     droppedColumns: (fill ? rangeWidth : width) > columns,
   };
 }
+// Fill copies the source rows into every row from the source to `to`, repeating the source block. Filling upward
+// repeats it from the bottom, so the row next to the source always matches the source's nearest row.
+export function fillTargets(source: CellRange, to: number): { row: number; from: number }[] {
+  const height = source.bottom - source.top + 1;
+  const targets: { row: number; from: number }[] = [];
+  for (let row = source.bottom + 1; row <= to; row++) {
+    targets.push({ row, from: source.top + ((row - source.top) % height) });
+  }
+  for (let row = source.top - 1; row >= to; row--) {
+    targets.push({ row, from: source.bottom - ((source.bottom - row) % height) });
+  }
+  return targets;
+}
 // Stored values pass through only between fields of the same type (and, for links, the same target form).
 export function parseClipCell(field: Field, cell: ClipCell): ParsedCell {
   const sameLinks = field.type !== "relation" || cell.target === field.config.target_form_id;
@@ -47,6 +60,11 @@ export function skipsWrite(field: Field, value: unknown) {
 }
 export function clearedValue(field: Field) {
   return field.type === "relation" ? [] : field.type === "boolean" ? false : null;
+}
+// The cleared value of a field by ID, for values a record does not store.
+export function emptyValue(schema: FormSchema, fieldId: string) {
+  const field = schema.fields.find((f) => f.id === fieldId);
+  return field ? clearedValue(field) : null;
 }
 function isEmpty(value: unknown) {
   return value == null || value === "" || value === false || (Array.isArray(value) && !value.length);

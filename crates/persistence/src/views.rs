@@ -16,16 +16,22 @@ impl Store {
         let schema = self.schema(actor, form_id).await?;
         let mut seen = std::collections::HashSet::new();
         for column in &input.config.columns {
-            if !seen.insert(column.field_id)
-                || !schema
-                    .fields
-                    .iter()
-                    .any(|f| f.id == column.field_id && f.archived_at.is_none())
-                || !(100..=800).contains(&column.width)
-            {
+            let field = schema
+                .fields
+                .iter()
+                .find(|f| f.id == column.field_id && f.archived_at.is_none());
+            if !seen.insert(column.field_id) || field.is_none() || !(100..=800).contains(&column.width) {
                 return Err(invalid(
                     "View columns need unique active field IDs and widths between 100 and 800.",
                 ));
+            }
+            if let (Some(field), Some(summary)) = (field, column.summary)
+                && !summary_applies(summary, field.field_type)
+            {
+                return Err(invalid(format!(
+                    "The chosen summary does not fit the {} field's type.",
+                    field.name
+                )));
             }
         }
         self.records(
@@ -96,6 +102,7 @@ impl Store {
                     field_id: id,
                     width,
                     hidden: false,
+                    summary: None,
                 });
             }
         }

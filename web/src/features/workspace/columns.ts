@@ -1,4 +1,4 @@
-import type { Field, FormSchema, ViewConfig } from "../../api/types";
+import type { ColumnLayout, Field, FormSchema, Summary, ViewConfig } from "../../api/types";
 export const minColumnWidth = 100;
 export const maxColumnWidth = 800;
 export const clampColumnWidth = (width: number) => Math.min(maxColumnWidth, Math.max(minColumnWidth, Math.round(width)));
@@ -7,7 +7,7 @@ export function orderedFields(schema: FormSchema, config: ViewConfig) {
   const configured = config.columns.map((c) => active.find((f) => f.id === c.field_id)).filter((f): f is Field => !!f);
   return [...configured, ...active.filter((f) => !configured.some((c) => c.id === f.id))];
 }
-export function columnLayouts(schema: FormSchema, config: ViewConfig) {
+export function columnLayouts(schema: FormSchema, config: ViewConfig): ColumnLayout[] {
   return orderedFields(schema, config).map(
     (f) =>
       config.columns.find((c) => c.field_id === f.id) ?? {
@@ -23,4 +23,7 @@ export function visibleFields(schema: FormSchema, config: ViewConfig) {
 }
 export function withColumnWidth(schema: FormSchema, config: ViewConfig, fieldId: string, width: number): ViewConfig {
   return { ...config, columns: columnLayouts(schema, config).map((c) => (c.field_id === fieldId ? { ...c, width } : c)) };
+}
+export function withColumnSummary(schema: FormSchema, config: ViewConfig, fieldId: string, summary: Summary | null): ViewConfig {
+  return { ...config, columns: columnLayouts(schema, config).map((c) => (c.field_id === fieldId ? { ...c, summary } : c)) };
 }

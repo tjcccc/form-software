@@ -1,24 +1,25 @@
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Paperclip, Plus, SearchX, Trash2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type { Catalogs, DataRecord, Field, FormSchema, RecordPage, ViewConfig } from "../../api/types";
+import type { Catalogs, DataRecord, Field, FormSchema, RecordPage, Summary, ViewConfig } from "../../api/types";
 import { FieldIcon } from "../../components/Icons";
 import { ColumnMenu } from "../workspace/ColumnMenu";
 import { columnLayouts, visibleFields } from "../workspace/columns";
 import type { ColumnAction } from "../workspace/useFieldActions";
 import type { CellRef } from "./cellSelection";
 import { ColumnResizeHandle } from "./ColumnResizeHandle";
-import { clearedValue } from "./gridPaste";
+import { emptyValue } from "./gridPaste";
 import { headingHeight, offsetsOf, rowHeight, segments, type WindowRange, windowRange } from "./gridWindow";
 import { groupKey, groupValue } from "./grouping";
 import { InlineCellEditor } from "./InlineCellEditor";
 import { Rating } from "./Rating";
 import { RecordContextMenu } from "./RecordContextMenu";
-import { changesFromWrite } from "./undoHistory";
+import { summarize, summaryLabels } from "./summaries";
+import { SummaryBar } from "./SummaryBar";
+import { changesFromWrite, type HistoryEntry } from "./undoHistory";
 import { useCellSelection } from "./useCellSelection";
 import { useGridClipboard } from "./useGridClipboard";
 import { useRecordGrid } from "./useRecordGrid";
-import { useUndoHistory } from "./useUndoHistory";
 import { displayValue, relationIds, titleOf } from "./values";
 export function RecordTable({
   schema,
@@ -39,6 +40,8 @@ export function RecordTable({
   editingBlocked,
   canResize,
   onResize,
+  onRecorded,
+  onSummary,
 }: {
   schema: FormSchema;
   records: DataRecord[];
@@ -59,8 +62,10 @@ export function RecordTable({
   editingBlocked: boolean;
   canResize: boolean;
   onResize: (fieldId: string, width: number) => void;
+  // Adds a step to the form's undo history; the builder runs inside a guard, so a failure never fails the save.
+  onRecorded: (build: () => HistoryEntry) => void;
+  onSummary: (fieldId: string, summary: Summary | null) => void;
 }) {
-  const history = useUndoHistory({ formId: schema.form.id, enabled: !editingBlocked, onSaved, onChanged, onNotice });
   const {
     active,
     menu,
@@ -92,7 +97,7 @@ export function RecordTable({
     onChanged,
     onNotice,
     editingBlocked,
-    onRecorded: history.record,
+    onRecorded,
   });
   const [columnMenu, setColumnMenu] = useState<{ field: Field; anchor: HTMLElement; x: number; y: number }>();
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
@@ -123,6 +128,14 @@ export function RecordTable({
     onCopy: (data, cut) => clipboard.copy(data, cut),
     onPaste: (data) => clipboard.paste(data),
     onClear: () => clipboard.clear(),
+    onExpand: (cell) => {
+      const record = rows.find((r) => r.id === cell.recordId);
+      if (record && record.id !== "draft") {
+        onSelect(record);
+      }
+    },
+    onFill: (source, to) => clipboard.fill(source, to),
+    onFillDown: () => clipboard.fillDown(),
   });
   const clipboard = useGridClipboard({
     schema,
@@ -139,8 +152,17 @@ export function RecordTable({
     draft: draft && !draft.anchor ? draft.record.values : undefined,
     onDraftUsed: () => setDraft(undefined),
     onWritten: (label, before, writes, written) =>
-      history.record(() => ({ label, changes: changesFromWrite(before, writes, written, (id) => emptyValue(schema, id)) })),
+      onRecorded(() => ({ label, changes: changesFromWrite(before, writes, written, (id) => emptyValue(schema, id)) })),
   });
+  // The fill handle shows on saved rows while nothing blocks grid writes.
+  const fillable =
+    !active &&
+    !draft?.anchor &&
+    !editingBlocked &&
+    !busy &&
+    !clipboard.busy &&
+    !!cells.range &&
+    cells.range.bottom < visibleRows.filter((r) => r.id !== "draft").length;
   const cutKeys = new Set(clipboard.cutCells?.map((c) => `${c.recordId}:${c.field.id}`));
   const items: GridItem[] = [];
   const position = new Map(records.map((r, i) => [r.id, i]));
@@ -205,7 +227,23 @@ export function RecordTable({
     }
   }, [endRequest]);
   const layouts = columnLayouts(schema, config);
+  const summaryOf = (field: Field) => layouts.find((c) => c.field_id === field.id)?.summary ?? undefined;
+  // Group headings summarize the group's loaded rows under each column after the first, which holds the group name.
+  const groupSummaries = groupedField && fields.slice(1).some(summaryOf);
+  const groupRecords = new Map<string, DataRecord[]>();
+  if (groupSummaries) {
+    for (const r of records) {
+      const key = groupKey(groupValue(r, groupedField));
+      const group = groupRecords.get(key);
+      if (group) {
+        group.push(r);
+      } else {
+        groupRecords.set(key, [r]);
+      }
+    }
+  }
   const widthOf = (field: Field) => liveWidths[field.id] ?? layouts.find((c) => c.field_id === field.id)?.width ?? 156;
+  const tableWidth = 100 + fields.reduce((total, field) => total + widthOf(field), 0);
   function clearPreview(id: string) {
     setLiveWidths((old) => Object.fromEntries(Object.entries(old).filter(([key]) => key !== id)));
   }
@@ -274,7 +312,7 @@ export function RecordTable({
       <table
         className={`record-table ${config.freeze_first !== false ? "freeze-first" : ""}`}
         aria-rowcount={items.length + 1}
-        style={{ width: 100 + fields.reduce((total, field) => total + widthOf(field), 0), minWidth: 0 }}
+        style={{ width: tableWidth, minWidth: 0 }}
       >
         <colgroup>
           <col className="row-number-col" />
@@ -375,7 +413,7 @@ export function RecordTable({
               const closed = collapsed.includes(item.collapseKey);
               return (
                 <tr className="group-heading" key={`heading:${item.record.id}`} aria-rowindex={index + 2}>
-                  <th colSpan={fields.length + 2} scope="rowgroup">
+                  <th colSpan={groupSummaries ? 2 : fields.length + 2} scope="rowgroup" className="group-label">
                     <button
                       className="group-toggle"
                       aria-expanded={!closed}
@@ -398,6 +436,24 @@ export function RecordTable({
                       </span>
                     </button>
                   </th>
+                  {groupSummaries && (
+                    <>
+                      {fields.slice(1).map((field) => {
+                        const summary = summaryOf(field);
+                        return (
+                          <td key={field.id} className="group-summary">
+                            {summary && (
+                              <span className="group-summary-value">
+                                <span className="summary-kind">{summaryLabels[summary]}</span>
+                                <strong>{summarize(field, groupRecords.get(item.key) ?? [], summary, catalogs)}</strong>
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="group-summary" />
+                    </>
+                  )}
                 </tr>
               );
             }
@@ -476,6 +532,9 @@ export function RecordTable({
                     {!active && cells.selection?.anchor.recordId === record.id && cells.selection.anchor.fieldId === field.id && (
                       <textarea className="cell-input" {...cells.inputProps(`Selected cell: ${titleOf(record, schema)}, ${field.name}`)} />
                     )}
+                    {fillable && cells.range?.bottom === rowOf.get(record.id) && cells.range?.right === fieldIndex && (
+                      <span className="fill-handle" aria-hidden="true" {...cells.fillHandleProps()} />
+                    )}
                   </td>
                 ))}
                 <td />
@@ -542,17 +601,25 @@ export function RecordTable({
       <div className="table-remainder" aria-hidden="true">
         <span>Space for what comes next.</span>
       </div>
+      {records.length > 0 && (
+        <SummaryBar
+          fields={fields}
+          layouts={layouts}
+          records={records}
+          catalogs={catalogs}
+          freezeFirst={config.freeze_first !== false}
+          width={tableWidth}
+          widthOf={widthOf}
+          disabled={loading}
+          onChange={onSummary}
+        />
+      )}
     </div>
   );
 }
 type GridItem =
   | { kind: "heading"; record: DataRecord; value: unknown; key: string; collapseKey: string; count: number; loaded: number }
   | { kind: "row"; record: DataRecord };
-// The stored form of an empty value, for fields missing from a record's values.
-function emptyValue(schema: FormSchema, fieldId: string) {
-  const field = schema.fields.find((f) => f.id === fieldId);
-  return field ? clearedValue(field) : null;
-}
 // Typed or composed text replaces the value of text and number cells; other types just open their editor.
 function seedFor(field: Field, typed: string): unknown {
   if (["short_text", "long_text", "url"].includes(field.type)) {

@@ -4,7 +4,7 @@ import { api, ApiError, message } from "../../api/client";
 import type { DataRecord, Field, FormSchema, ViewConfig } from "../../api/types";
 import { clearedValue, maxPasteRecords } from "./gridPaste";
 import type { RecordAction } from "./RecordContextMenu";
-import type { HistoryEntry } from "./undoHistory";
+import { changesFromSave, type HistoryEntry } from "./undoHistory";
 import { initialValues, titleOf } from "./values";
 
 export function useRecordGrid({
@@ -87,18 +87,8 @@ export function useRecordGrid({
     }
     if (active && active.record.id === record.id) {
       const field = active.field;
-      const value = (values: DataRecord["values"]) => (field.id in values ? values[field.id] : clearedValue(field));
-      onRecorded(() => ({
-        label: "edit",
-        changes: [
-          {
-            recordId: record.id,
-            version: record.version,
-            before: { [field.id]: value(active.record.values) },
-            after: { [field.id]: value(record.values) },
-          },
-        ],
-      }));
+      const before = active.record;
+      onRecorded(() => ({ label: "edit", changes: changesFromSave(before, record, [field.id], () => clearedValue(field)) }));
     }
     onSaved(record);
   }

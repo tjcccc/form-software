@@ -1,7 +1,7 @@
 {
   "name": "formsoftware",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "packageManager": "pnpm@12.9.1",
   "scripts": {
     "dev": "node scripts/dev.mjs",

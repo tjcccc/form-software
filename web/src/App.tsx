@@ -268,7 +268,7 @@ function Login({ initialError, onSignedIn }: { initialError: string; onSignedIn:
         </form>
         <div className="login-card-footer">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
-          <span>v0.7.0</span>
+          <span>v0.8.0</span>
         </div>
       </main>
       <footer className="login-footer">

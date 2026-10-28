@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.7.0"
+    "version": "0.8.0"
   },
   "paths": {
     "/api/v1/attachments/{attachment_id}": {
@@ -1447,6 +1447,17 @@
           "hidden": {
             "type": "boolean"
           },
+          "summary": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Summary",
+                "description": "Shown in the grid's summary bar and group headings; absent means no summary."
+              }
+            ]
+          },
           "width": {
             "type": "integer",
             "format": "int32",
@@ -2282,6 +2293,25 @@
             "format": "uuid"
           }
         }
+      },
+      "Summary": {
+        "type": "string",
+        "description": "A column summary, computed by clients over the rows a view shows. `summary_applies` lists the field types each\none fits.",
+        "enum": [
+          "filled",
+          "empty",
+          "percent_filled",
+          "unique",
+          "sum",
+          "average",
+          "min",
+          "max",
+          "earliest",
+          "latest",
+          "checked",
+          "unchecked",
+          "percent_checked"
+        ]
       },
       "UpdateColumnWidth": {
         "type": "object",

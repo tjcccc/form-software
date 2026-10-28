@@ -380,6 +380,7 @@ export interface components {
             /** Format: uuid */
             field_id: string;
             hidden: boolean;
+            summary?: null | components["schemas"]["Summary"];
             /** Format: int32 */
             width: number;
         };
@@ -614,6 +615,12 @@ export interface components {
             /** Format: uuid */
             field_id: string;
         };
+        /**
+         * @description A column summary, computed by clients over the rows a view shows. `summary_applies` lists the field types each
+         *     one fits.
+         * @enum {string}
+         */
+        Summary: "filled" | "empty" | "percent_filled" | "unique" | "sum" | "average" | "min" | "max" | "earliest" | "latest" | "checked" | "unchecked" | "percent_checked";
         UpdateColumnWidth: {
             /** Format: int32 */
             width: number;

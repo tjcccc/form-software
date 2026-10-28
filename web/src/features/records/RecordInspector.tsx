@@ -6,7 +6,9 @@ import type { Catalogs, DataRecord, Field, FormSchema, Values } from "../../api/
 import { ErrorNotice } from "../../components/Dialog";
 import { FieldIcon } from "../../components/Icons";
 import { FieldEditor } from "./FieldEditor";
+import { emptyValue } from "./gridPaste";
 import { RelationPicker } from "./RelationPicker";
+import { changesFromSave, type HistoryEntry } from "./undoHistory";
 import { initialValues, titleOf } from "./values";
 export function RecordInspector({
   schema,
@@ -15,6 +17,7 @@ export function RecordInspector({
   onClose,
   onSaved,
   onArchived,
+  onRecorded,
 }: {
   schema: FormSchema;
   initial: DataRecord | null;
@@ -22,6 +25,7 @@ export function RecordInspector({
   onClose: () => void;
   onSaved: (record: DataRecord) => void;
   onArchived: () => void;
+  onRecorded: (build: () => HistoryEntry) => void;
 }) {
   const [record, setRecord] = useState(initial);
   const [values, setValues] = useState<Values>(() => initial?.values ?? initialValues(schema));
@@ -90,7 +94,8 @@ export function RecordInspector({
     onSaved(next);
   }
   function fail(e: unknown) {
-    setError(message(e));
+    const reasons = e instanceof ApiError ? [...new Set(e.body.records?.map((issue) => issue.message) ?? [])] : [];
+    setError([message(e), ...reasons].join(" "));
     if (e instanceof ApiError) {
       setIssues(Object.fromEntries(e.body.issues.filter((i) => i.field_id).map((i) => [i.field_id!, i.message])));
       if (e.body.current) {
@@ -113,6 +118,20 @@ export function RecordInspector({
             Object.fromEntries(fields.filter((f) => f.type !== "attachment").map((f) => [f.id, values[f.id] ?? null])),
           )
         : await api.createRecord(schema.form.id, values);
+      const before = record;
+      onRecorded(() =>
+        before
+          ? {
+              label: "record edit",
+              changes: changesFromSave(
+                before,
+                next,
+                fields.filter((f) => f.type !== "attachment").map((f) => f.id),
+                (id) => emptyValue(schema, id),
+              ),
+            }
+          : { label: "new record", changes: [{ recordId: next.id, version: next.version, before: null, after: {} }] },
+      );
       accept(next);
       setSaved(true);
     } catch (e) {
@@ -165,7 +184,12 @@ export function RecordInspector({
     }
     setBusy(true);
     try {
-      await api.archiveRecord(record);
+      // Through the batch archive, which returns the version that undo needs.
+      const written = await api.writeRecords(schema.form.id, { archives: [{ record_id: record.id, expected_version: record.version }] });
+      onRecorded(() => ({
+        label: "delete",
+        changes: written.archived.map((r) => ({ recordId: r.id, version: r.version, before: {}, after: null })),
+      }));
       onArchived();
     } catch (e) {
       fail(e);

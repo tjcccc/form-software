@@ -77,6 +77,18 @@ pub fn validate_field(input: &CreateField) -> Result<(), String> {
     }
     Ok(())
 }
+pub fn summary_applies(summary: Summary, field_type: FieldType) -> bool {
+    use FieldType::*;
+    match summary {
+        Summary::Filled | Summary::Empty | Summary::PercentFilled => field_type != Boolean,
+        Summary::Unique => !matches!(field_type, Boolean | Attachment),
+        Summary::Sum | Summary::Average | Summary::Min | Summary::Max => {
+            matches!(field_type, Integer | Decimal | Duration)
+        }
+        Summary::Earliest | Summary::Latest => matches!(field_type, Date | DateTime),
+        Summary::Checked | Summary::Unchecked | Summary::PercentChecked => field_type == Boolean,
+    }
+}
 pub fn is_empty(value: &Value) -> bool {
     value.is_null()
         || value.as_str().is_some_and(|s| s.trim().is_empty())
@@ -252,5 +264,15 @@ mod tests {
         assert!(validate_value(&f, &json!([id, id])).is_err());
         f.config.cardinality = Some(Cardinality::Many);
         assert!(validate_value(&f, &json!([id, id])).is_err());
+    }
+    #[test]
+    fn summaries_fit_their_field_types() {
+        assert!(summary_applies(Summary::Sum, FieldType::Duration));
+        assert!(!summary_applies(Summary::Sum, FieldType::ShortText));
+        assert!(summary_applies(Summary::Latest, FieldType::Date));
+        assert!(!summary_applies(Summary::Filled, FieldType::Boolean));
+        assert!(summary_applies(Summary::PercentChecked, FieldType::Boolean));
+        assert!(!summary_applies(Summary::Unique, FieldType::Attachment));
+        assert!(summary_applies(Summary::Filled, FieldType::Attachment));
     }
 }

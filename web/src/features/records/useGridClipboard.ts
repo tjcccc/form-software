@@ -11,6 +11,7 @@ import {
   clipboardType,
   type ClipCell,
   type ClipPayload,
+  fillTargets,
   linkIds,
   maxPasteRecords,
   parseClipCell,
@@ -206,6 +207,63 @@ export function useGridClipboard({
       setBusy(false);
     }
   }
+  // Copies the source rows' values into the rows from the source to `to` (fill handle and Cmd/Ctrl+D). Stored values
+  // pass through unchanged, so links and options fill without lookups; cells that already match are not written.
+  async function fill(source: CellRange, to: number, selectResult: boolean) {
+    if (blocked || busy || source.bottom >= rows.length) {
+      return;
+    }
+    const end = Math.max(0, Math.min(to, rows.length - 1));
+    const columns = fields.slice(source.left, source.right + 1);
+    const writes: CellWrite[] = [];
+    let skipped = 0;
+    for (const { row, from } of fillTargets(source, end)) {
+      for (const field of columns) {
+        const value = rows[from].values[field.id] ?? clearedValue(field);
+        if (skipsWrite(field, value)) {
+          skipped++;
+        } else if (JSON.stringify(rows[row].values[field.id] ?? clearedValue(field)) !== JSON.stringify(value)) {
+          writes.push({ row, field, value });
+        }
+      }
+    }
+    const built = buildWrites(writes, rows);
+    if (!writeCount(built)) {
+      onNotice(
+        skipped ? "Nothing to fill: files and required fields left empty are skipped." : "Nothing to fill: the cells already match.",
+      );
+      return;
+    }
+    if (writeCount(built) > maxPasteRecords) {
+      onNotice(`Fill changes at most ${maxPasteRecords} records at a time.`);
+      return;
+    }
+    const top = Math.min(source.top, end);
+    const bottom = Math.max(source.bottom, end);
+    const select: Pending["select"] = selectResult
+      ? [
+          { recordId: rows[top].id, fieldId: fields[source.left].id },
+          { recordId: rows[bottom].id, fieldId: fields[source.right].id },
+        ]
+      : undefined;
+    setBusy(true);
+    try {
+      await write({ label: "fill", writes: built, newRows: 0, select }, skipped ? "Files and empty required fields were skipped." : "");
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Like spreadsheets: a taller selection takes its top row's values; a single row takes the row above.
+  function fillDown() {
+    if (!range) {
+      return;
+    }
+    if (range.bottom > range.top) {
+      void fill({ ...range, bottom: range.top }, range.bottom, false);
+    } else if (range.top > 0) {
+      void fill({ ...range, top: range.top - 1, bottom: range.top - 1 }, range.top, false);
+    }
+  }
   async function resolveLinks(parsed: { field: Field; cell: ClipCell; parsed: ReturnType<typeof parseClipCell> }[]) {
     const labels = new Map<string, Set<string>>();
     for (const { field, cell, parsed: result } of parsed) {
@@ -273,6 +331,8 @@ export function useGridClipboard({
     copy,
     paste: (data: DataTransfer) => void paste(data),
     clear: () => void clear(),
+    fill: (source: CellRange, to: number) => void fill(source, to, true),
+    fillDown,
     confirm: async () => {
       const plan = pending;
       setPending(undefined);

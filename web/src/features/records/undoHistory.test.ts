@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { WrittenRecords } from "../../api/types";
 import { record } from "../../testing/fixtures";
-import { changesFromWrite, type HistoryEntry, maxHistory, push, reversal, withVersions } from "./undoHistory";
+import { changesFromSave, changesFromWrite, type HistoryEntry, maxHistory, push, reversal, withVersions } from "./undoHistory";
 
 const written = (overrides: Partial<WrittenRecords>): WrittenRecords => ({
   updated: [],
@@ -33,6 +33,22 @@ describe("changesFromWrite", () => {
       { recordId: "c", version: 1, before: null, after: {} },
       { recordId: "d", version: 4, before: {}, after: null },
     ]);
+  });
+});
+describe("changesFromSave", () => {
+  it("keeps only the fields a save changed, and records nothing for an unchanged save", () => {
+    const before = record({ name: "Old", note: "same" }, [], "a");
+    const after = { ...record({ name: "New", note: "same", links: ["x"] }, [], "a"), version: 2 };
+    const empty = (id: string) => (id === "links" ? [] : null);
+    expect(changesFromSave(before, after, ["name", "note", "links"], empty)).toEqual([
+      { recordId: "a", version: 2, before: { name: "Old", links: [] }, after: { name: "New", links: ["x"] } },
+    ]);
+    expect(changesFromSave(before, { ...before, version: 2 }, ["name", "note"])).toEqual([]);
+  });
+  it("treats a missing value and its empty value as the same", () => {
+    const before = record({}, [], "a");
+    const after = { ...record({ links: [] }, [], "a"), version: 2 };
+    expect(changesFromSave(before, after, ["links"], () => [])).toEqual([]);
   });
 });
 describe("reversal", () => {

@@ -820,6 +820,25 @@ async fn authenticated_record_workflow(pool: PgPool) {
         StatusCode::UNPROCESSABLE_ENTITY
     );
     let custom: View = api.ok(Method::POST,&format!("/api/v1/forms/{}/views",work.form.id),json!({"name":"Width isolation","config":{"columns":[{"field_id":relation.id,"width":180,"hidden":true}],"filters":[{"field_id":duration.id,"op":"gte","value":20}],"sort":{"field_id":duration.id,"descending":true},"group_by":relation.id,"freeze_first":false}})).await;
+    // Column summaries save with the view and must fit the field's type.
+    let summed: View = api
+        .ok(
+            Method::POST,
+            &format!("/api/v1/forms/{}/views", work.form.id),
+            json!({"name":"Summaries","config":{"columns":[{"field_id":duration.id,"width":160,"hidden":false,"summary":"sum"}]}}),
+        )
+        .await;
+    assert_eq!(summed.config.columns[0].summary, Some(Summary::Sum));
+    assert_eq!(
+        api.request(
+            Method::POST,
+            &format!("/api/v1/forms/{}/views", work.form.id),
+            json!({"name":"Summaries","config":{"columns":[{"field_id":name,"width":160,"hidden":false,"summary":"sum"}]}}),
+        )
+        .await
+        .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
     let path_one = format!("/api/v1/views/{}/columns/{}/width", custom.id, name);
     let path_two = format!("/api/v1/views/{}/columns/{}/width", custom.id, duration.id);
     let (one, two) = tokio::join!(

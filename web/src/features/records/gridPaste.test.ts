@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ResolvedLabel } from "../../api/types";
 import { field, record } from "../../testing/fixtures";
-import { buildWrites, type ClipCell, linkIds, parseClipCell, pasteTargets, readPayload, skipsWrite } from "./gridPaste";
+import { buildWrites, type ClipCell, fillTargets, linkIds, parseClipCell, pasteTargets, readPayload, skipsWrite } from "./gridPaste";
 
 const text = (rows: string[][]): ClipCell[][] => rows.map((row) => row.map((t) => ({ text: t })));
 const at = (targets: ReturnType<typeof pasteTargets>["targets"]) => targets.map((t) => `${t.row},${t.col}=${t.cell.text}`);
@@ -39,6 +39,18 @@ describe("pasteTargets", () => {
     expect(at(result.targets)).toEqual(["4,1=a", "4,2=b", "5,1=d", "5,2=e"]);
     expect(result.newRows).toBe(1);
     expect(result.droppedColumns).toBe(true);
+  });
+});
+describe("fillTargets", () => {
+  const rows = (targets: ReturnType<typeof fillTargets>) => targets.map((t) => `${t.row}<${t.from}`);
+  it("repeats the source rows downward", () => {
+    expect(rows(fillTargets({ top: 2, bottom: 3, left: 0, right: 1 }, 6))).toEqual(["4<2", "5<3", "6<2"]);
+  });
+  it("repeats upward from the source's bottom, so the adjacent row matches the nearest source row", () => {
+    expect(rows(fillTargets({ top: 2, bottom: 3, left: 0, right: 0 }, 0))).toEqual(["1<3", "0<2"]);
+  });
+  it("fills nothing when the drag ends inside the source", () => {
+    expect(fillTargets({ top: 2, bottom: 3, left: 0, right: 0 }, 3)).toEqual([]);
   });
 });
 describe("parseClipCell", () => {

@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   cellKey,
+  type CellRange,
   type CellRef,
   type CellSelection,
   contains,
@@ -28,6 +29,9 @@ export function useCellSelection({
   onCopy,
   onPaste,
   onClear,
+  onExpand,
+  onFill,
+  onFillDown,
 }: {
   axes: GridAxes;
   editing: boolean;
@@ -35,6 +39,10 @@ export function useCellSelection({
   onCopy?: (data: DataTransfer, cut: boolean) => void;
   onPaste?: (data: DataTransfer) => void;
   onClear?: () => void;
+  onExpand?: (cell: CellRef) => void;
+  // Dragging the fill handle from `source` to row `to`, and Cmd/Ctrl+D.
+  onFill?: (source: CellRange, to: number) => void;
+  onFillDown?: () => void;
 }) {
   const [stored, setStored] = useState<CellSelection>();
   const [composing, setComposing] = useState(false);
@@ -46,9 +54,24 @@ export function useCellSelection({
   const press = useRef<{ key: string; wasSelected: boolean; moved: boolean }>(undefined);
   const dragging = useRef(false);
   const pending = useRef<"anchor" | "focus">(undefined);
+  // The fill handle's drag: the range it started from and the row the pointer is over.
+  const [filling, setFilling] = useState<{ source: CellRange; to: number }>();
+  const fillDrag = useRef<{ source: CellRange; to: number }>(undefined);
+  const latestFill = useRef(onFill);
   useEffect(() => {
-    const release = () => {
+    latestFill.current = onFill;
+  });
+  useEffect(() => {
+    const release = (event: Event) => {
       dragging.current = false;
+      const drag = fillDrag.current;
+      fillDrag.current = undefined;
+      if (drag) {
+        setFilling(undefined);
+        if (event.type === "pointerup" && (drag.to < drag.source.top || drag.to > drag.source.bottom)) {
+          latestFill.current?.(drag.source, drag.to);
+        }
+      }
     };
     document.addEventListener("pointerup", release);
     document.addEventListener("pointercancel", release);
@@ -102,6 +125,12 @@ export function useCellSelection({
       tabIndex: !selection && row === 0 && col === 0 ? 0 : -1,
       "data-selected": (range && contains(range, row, col)) || undefined,
       "data-active": active || undefined,
+      "data-fill":
+        (filling &&
+          col >= filling.source.left &&
+          col <= filling.source.right &&
+          ((row > filling.source.bottom && row <= filling.to) || (row < filling.source.top && row >= filling.to))) ||
+        undefined,
       onPointerDown: (event: PointerEvent<HTMLElement>) => {
         if (event.button !== 0) {
           return;
@@ -125,6 +154,12 @@ export function useCellSelection({
         setStored(single(cell));
       },
       onPointerEnter: () => {
+        if (fillDrag.current) {
+          // The fill handle only extends rows, as in Airtable.
+          fillDrag.current = { ...fillDrag.current, to: row };
+          setFilling(fillDrag.current);
+          return;
+        }
         if (dragging.current && press.current && !editing) {
           press.current.moved = true;
           setStored((old) => (old ? { anchor: old.anchor, focus: cell } : old));
@@ -217,8 +252,9 @@ export function useCellSelection({
           event.preventDefault();
           startEdit();
         } else if (event.key === " " && !shortcut) {
-          // Reserved for expanding the record, as in Airtable; a space never starts an edit.
+          // Space expands the selected cell's record, as in Airtable; it never starts an edit.
           event.preventDefault();
+          onExpand?.(selection.anchor);
         } else if (event.key === "Escape") {
           // Escape collapses a range, then clears the selection so workspace shortcuts work again.
           event.preventDefault();
@@ -239,6 +275,10 @@ export function useCellSelection({
           window.setTimeout(() => {
             field.value = "";
           });
+        } else if (shortcut && event.key.toLowerCase() === "d" && !event.shiftKey) {
+          // Fill down; the browser would otherwise bookmark the page.
+          event.preventDefault();
+          onFillDown?.();
         } else if ((event.key === "Delete" || event.key === "Backspace") && !shortcut && !event.altKey) {
           event.preventDefault();
           onClear?.();
@@ -253,5 +293,19 @@ export function useCellSelection({
     inputProps,
     selectColumn: (fieldId: string) => select(selectColumn(axes, fieldId)),
     selectCells: (anchor: CellRef, focus: CellRef) => select({ anchor, focus }),
+    filling: !!filling,
+    // Props for the small square at the selection's bottom-right corner.
+    fillHandleProps: () => ({
+      onPointerDown: (event: PointerEvent<HTMLElement>) => {
+        if (event.button !== 0 || editing || !range) {
+          return;
+        }
+        // Keep the selection and focus where they are while dragging.
+        event.preventDefault();
+        event.stopPropagation();
+        fillDrag.current = { source: range, to: range.bottom };
+        setFilling(fillDrag.current);
+      },
+    }),
   };
 }

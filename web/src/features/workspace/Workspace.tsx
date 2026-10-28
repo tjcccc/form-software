@@ -22,9 +22,11 @@ import { newCondition } from "../filters/filterRules";
 import { CsvImport } from "../records/CsvImport";
 import { RecordInspector } from "../records/RecordInspector";
 import { RecordTable } from "../records/RecordTable";
+import { useUndoHistory } from "../records/useUndoHistory";
 import { formatDuration } from "../records/values";
 import { FieldDialog } from "../schema/FieldDialog";
 import { SchemaDesigner } from "../schema/SchemaDesigner";
+import { withColumnSummary } from "./columns";
 import { useFieldActions } from "./useFieldActions";
 import { useWorkspace } from "./useWorkspace";
 import { ViewControls } from "./ViewControls";
@@ -51,6 +53,14 @@ export function Workspace({
   const [notice, setNotice] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const onClose = () => setInspecting(undefined);
+  // One history for the form's grid and record editor; it pauses while the editor is open.
+  const history = useUndoHistory({
+    formId,
+    enabled: !!schema && inspecting === undefined,
+    onSaved: state.replaceRecord,
+    onChanged: () => changed(),
+    onNotice: setNotice,
+  });
   useEffect(() => {
     if (!notice) {
       return;
@@ -284,6 +294,8 @@ export function Workspace({
                 onSaved={state.replaceRecord}
                 onChanged={changed}
                 onNotice={setNotice}
+                onRecorded={history.record}
+                onSummary={(fieldId, summary) => state.changeConfig(withColumnSummary(schema, config, fieldId, summary))}
               />
             )}
             {schema && inspecting !== undefined && (
@@ -293,6 +305,7 @@ export function Workspace({
                 initial={inspecting}
                 catalogs={catalogs}
                 onClose={onClose}
+                onRecorded={history.record}
                 onSaved={() => {
                   changed();
                 }}
@@ -327,7 +340,7 @@ export function Workspace({
         <footer className="workspace-bottom">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
           <span>
-            FormSoftware <span className="bottom-slash">/</span> 0.7.0
+            FormSoftware <span className="bottom-slash">/</span> 0.8.0
           </span>
         </footer>
       </div>
@@ -401,7 +414,9 @@ export function Workspace({
               ["Save cell / edit next cell", "Enter / Tab"],
               ["Copy / cut / paste cells", "⌘ / Ctrl + C / X / V"],
               ["Clear selected cells", "Delete"],
-              ["Undo / redo grid changes", "⌘ / Ctrl + Z / Shift + Z"],
+              ["Fill down", "⌘ / Ctrl + D"],
+              ["Open the selected record", "Space"],
+              ["Undo / redo changes", "⌘ / Ctrl + Z / Shift + Z"],
               ["Record actions", "Shift + F10"],
               ["Close a panel", "Esc"],
               ["Show this guide", "?"],

@@ -39,6 +39,30 @@ export function changesFromWrite(
     ...written.restored.map((record) => ({ recordId: record.id, version: record.version, before: null, after: {} })),
   ];
 }
+// Records a single-record save (an inline cell edit or a record editor save), keeping only the given fields whose
+// value the save changed; an unchanged save records nothing.
+export function changesFromSave(
+  before: DataRecord,
+  after: DataRecord,
+  keys: string[],
+  empty: (fieldId: string) => unknown = () => null,
+): RecordChange[] {
+  const changed = keys.filter((key) => {
+    const was = pick(before.values, [key], empty)[key];
+    const is = pick(after.values, [key], empty)[key];
+    return JSON.stringify(was) !== JSON.stringify(is);
+  });
+  return changed.length
+    ? [
+        {
+          recordId: after.id,
+          version: after.version,
+          before: pick(before.values, changed, empty),
+          after: pick(after.values, changed, empty),
+        },
+      ]
+    : [];
+}
 // The write that moves every record of the entry to its earlier (undo) or later (redo) state. Restoring brings a
 // record back as it was archived, so created and archived records carry no values of their own.
 export function reversal(entry: HistoryEntry, direction: Direction): WriteRecords {

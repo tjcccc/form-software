@@ -333,6 +333,28 @@ pub struct ColumnLayout {
     pub field_id: Uuid,
     pub width: u32,
     pub hidden: bool,
+    /// Shown in the grid's summary bar and group headings; absent means no summary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<Summary>,
+}
+/// A column summary, computed by clients over the rows a view shows. `summary_applies` lists the field types each
+/// one fits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Summary {
+    Filled,
+    Empty,
+    PercentFilled,
+    Unique,
+    Sum,
+    Average,
+    Min,
+    Max,
+    Earliest,
+    Latest,
+    Checked,
+    Unchecked,
+    PercentChecked,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct View {

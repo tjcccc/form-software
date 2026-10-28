@@ -343,7 +343,7 @@ export function Workspace({
         <footer className="workspace-bottom">
           <span>STRUCTURE FOR THE EVERYDAY.</span>
           <span>
-            FormSoftware <span className="bottom-slash">/</span> 0.4.1
+            FormSoftware <span className="bottom-slash">/</span> 0.4.2
           </span>
         </footer>
       </div>

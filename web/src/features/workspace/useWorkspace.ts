@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { aborted, api, message } from "../../api/client";
 import type { Catalogs, DataRecord, FormSchema, RecordPage, RelationCatalog, View, ViewConfig } from "../../api/types";
 import { relationIds } from "../records/values";
-import { withColumnWidth } from "./columns";
+import { clampColumnWidth, withColumnWidth } from "./columns";
 import { useColumnWidths } from "./useColumnWidths";
 export const emptyView: ViewConfig = { columns: [], filters: [], sort: null, group_by: null, freeze_first: true };
 export function useWorkspace(formId: string) {
@@ -29,7 +29,7 @@ export function useWorkspace(formId: string) {
     if (!schema || !viewId) {
       return;
     }
-    const next = Math.min(800, Math.max(100, Math.round(width)));
+    const next = clampColumnWidth(width);
     setConfig((old) => withColumnWidth(schema, old, fieldId, next));
     widths.persist({ viewId, fieldId, width: next });
   }

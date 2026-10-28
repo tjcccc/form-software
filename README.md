@@ -93,6 +93,7 @@ If Xcode reports a missing Metal toolchain: `xcodebuild -downloadComponent Metal
 pnpm check                         # TypeScript + ESLint
 pnpm lint                          # on-demand lint and formatting checks
 pnpm lint:fix                      # apply supported fixes, then report remaining issues
+pnpm test:web                      # Vitest unit tests for pure web helpers
 pnpm build                         # production web build
 cargo fmt --all -- --check
 cargo check --workspace            # includes native; use default cargo check on Linux CI
@@ -104,11 +105,11 @@ pnpm backup:check                  # isolated local backup/restore drill; stop t
 
 The API check refuses remote targets and only administers disposable SQLx databases on this project's local development service. It covers auth/workspace boundaries, invalid-write rollback, relation invariants, concurrent edits, attachments, persistent relative insertion, duplication/file independence, import atomicity, and cookie Origin protection. A short browser check is appropriate when changing interactions; there is no large visual-test suite.
 
-The new lint commands run on demand, without a pre-commit hook or additional CI gate. They cover tracked and unignored new project files with ESLint, Prettier, Stylelint, markdownlint, AutoCorrect, ShellCheck, shfmt, rustfmt, and Clippy. Generated contracts, lockfiles, dependencies, build output, and agent runtime/state directories are excluded; the MVP specification is included. HTML and SQL linting remain deferred. Prettier retains double quotes and 140 columns; rustfmt uses the global 120-column baseline. On macOS, Clippy includes the native workspace member; other platforms check the default workspace members.
+The new lint commands run on demand, without a pre-commit hook or additional CI gate. They cover tracked and unignored new project files with ESLint, Prettier, Stylelint, markdownlint, AutoCorrect, ShellCheck, shfmt, rustfmt, and Clippy. Two project guards also run: `scripts/check-db-access.mjs` fails when a client or domain crate depends on SQLx or the store, or when server code outside `auth.rs` queries PostgreSQL; `scripts/check-file-sizes.mjs` fails when a source or stylesheet file grows past 800 lines (recorded exceptions in `.file-size-baseline.json` may shrink but not grow; run it with `--update` after a split). Generated contracts, lockfiles, dependencies, build output, and agent runtime/state directories are excluded; the MVP specification is included. HTML and SQL linting remain deferred. Prettier retains double quotes and 140 columns; rustfmt uses the global 120-column baseline. On macOS, Clippy includes the native workspace member; other platforms check the default workspace members.
 
 Install JavaScript tools with `pnpm install`, Rust tools with `rustup component add rustfmt clippy`, and shell tools with `brew install shellcheck shfmt` on macOS (or your system package manager). `pnpm lint:fix` applies supported fixes and formatting; remaining violations require manual review. Integration-test helpers allow `expect` so fixture and response failures remain immediate.
 
-Stylelint preserves the existing component and state cascade: the four current stylesheets disable `no-descending-specificity`, which compares selectors across unrelated component contexts. Specificity limits are `0,3,1` for editors, `0,4,0` for tokens, and `0,4,1` for tables; tables allow four compound selectors for row states. Other stylesheets retain the global `0,3,0` specificity and three-compound limits. These exceptions preserve existing selectors and their precedence.
+Stylelint preserves the existing component and state cascade: the current stylesheets disable `no-descending-specificity`, which compares selectors across unrelated component contexts. Specificity limits are `0,3,1` for editors and schema, `0,4,0` for tokens, and `0,4,1` for the table, table-editing, and filter sheets; those sheets allow four compound selectors for row states. Stylesheets are imported in `web/src/main.tsx` in cascade order; keep that order when splitting or adding sheets. Other stylesheets retain the global `0,3,0` specificity and three-compound limits. These exceptions preserve existing selectors and their precedence.
 
 ## Architecture and delivery
 

@@ -5,5 +5,6 @@
 - Keep immutable field UUIDs on the wire and stable keys in agent-facing input. Never duplicate canonical relations or attachments into record JSONB.
 - Generate contracts with `pnpm contracts`; do not hand-edit `contracts/openapi.json` or `web/src/api/schema.d.ts`.
 - Local `formsoftware_dev` and SQLx-created test databases on port 55437 are disposable fixtures. Never point `test:api` or `backup:check` at real data.
-- Default checks are `pnpm check`, `pnpm build`, `cargo check`, and affected domain/API tests. Native needs macOS/Xcode; keep native checks outside default Linux CI.
-- Run `pnpm lint` or `pnpm lint:fix` on demand; do not add lint hooks or CI enforcement.
+- Default checks are `pnpm check`, `pnpm build`, `cargo check`, and affected web/domain/API tests (`pnpm test:web` runs the Vitest unit tests). Native needs macOS/Xcode; keep native checks outside default Linux CI.
+- Run `pnpm lint` or `pnpm lint:fix` on demand; do not add lint hooks or CI enforcement. `pnpm lint` also runs the database-access guard and the 800-line file-size ratchet; after splitting a recorded file, run `node scripts/check-file-sizes.mjs --update`.
+- Web stylesheets are imported in cascade order in `web/src/main.tsx`; keep that order when splitting or adding sheets.

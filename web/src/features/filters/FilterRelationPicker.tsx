@@ -4,6 +4,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { aborted, api, message } from "../../api/client";
 import type { DataRecord, Field, RelationCatalog } from "../../api/types";
 import { titleOf } from "../records/values";
+import { maxRelationChoices } from "./filterRules";
 export function FilterRelationPicker({
   field,
   value,
@@ -213,7 +214,7 @@ export function FilterRelationPicker({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  if (choices[0] && !(multiple && selected.length >= 100 && !selected.includes(choices[0].id))) {
+                  if (choices[0] && !(multiple && selected.length >= maxRelationChoices && !selected.includes(choices[0].id))) {
                     choose(choices[0].id);
                   }
                 }
@@ -254,7 +255,7 @@ export function FilterRelationPicker({
                 type="button"
                 role="option"
                 aria-selected={selected.includes(record.id)}
-                disabled={multiple && selected.length >= 100 && !selected.includes(record.id)}
+                disabled={multiple && selected.length >= maxRelationChoices && !selected.includes(record.id)}
                 onClick={() => choose(record.id)}
               >
                 <span>{catalog ? titleOf(record, catalog.schema) : record.id.slice(0, 8)}</span>
@@ -264,7 +265,7 @@ export function FilterRelationPicker({
             {!choices.length && <p className="picker-empty">{result?.query === query ? "No matching records." : "Searching…"}</p>}
           </div>
           <p className="picker-hint">
-            {multiple ? "Choose up to 100 records · " : ""}Searches all linked records, including disabled choices.
+            {multiple ? `Choose up to ${maxRelationChoices} records · ` : ""}Searches all linked records, including disabled choices.
           </p>
         </div>
       )}

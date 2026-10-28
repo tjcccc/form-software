@@ -5,7 +5,7 @@ import { message } from "../../api/client";
 import type { FormSchema, View, ViewConfig } from "../../api/types";
 import { FieldIcon } from "../../components/Icons";
 import { Popover } from "../../components/Popover";
-import { columnLayouts } from "./columns";
+import { clampColumnWidth, columnLayouts, maxColumnWidth, minColumnWidth } from "./columns";
 export function ViewControls({
   schema,
   views,
@@ -221,11 +221,11 @@ export function ViewControls({
                     aria-label={`${field.name} column width`}
                     key={`${field.id}:${column?.width}`}
                     defaultValue={column?.width ?? 156}
-                    min={100}
-                    max={800}
+                    min={minColumnWidth}
+                    max={maxColumnWidth}
                     step={10}
                     onBlur={(e) => {
-                      const next = Math.min(800, Math.max(100, Math.round(Number(e.currentTarget.value))));
+                      const next = clampColumnWidth(Number(e.currentTarget.value));
                       e.currentTarget.value = String(next);
                       if (next !== column?.width) {
                         onResize(field.id, next);

@@ -1,12 +1,13 @@
 {
   "name": "formsoftware",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.4.2",
   "packageManager": "pnpm@12.9.1",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "pnpm --dir web build",
     "check": "pnpm --dir web check",
+    "test:web": "pnpm --dir web test",
     "format": "prettier --write web/src docs spec README.md package.json",
     "contracts": "cargo run -q -p form-server -- --openapi > contracts/openapi.json && openapi-typescript contracts/openapi.json -o web/src/api/schema.d.ts",
     "test:api": "node scripts/test-api.mjs",

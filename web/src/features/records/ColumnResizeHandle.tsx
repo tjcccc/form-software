@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+
+import { clampColumnWidth, maxColumnWidth, minColumnWidth } from "../workspace/columns";
 export function ColumnResizeHandle({
   name,
   width,
@@ -24,7 +26,7 @@ export function ColumnResizeHandle({
     return () => document.documentElement.classList.remove("resizing-column");
   }, [dragging]);
   function preview(value: number) {
-    const next = Math.min(800, Math.max(100, Math.round(value)));
+    const next = clampColumnWidth(value);
     if (gesture.current) {
       gesture.current.width = next;
     }
@@ -44,8 +46,8 @@ export function ColumnResizeHandle({
       role="separator"
       aria-label={`Resize ${name} column`}
       aria-orientation="vertical"
-      aria-valuemin={100}
-      aria-valuemax={800}
+      aria-valuemin={minColumnWidth}
+      aria-valuemax={maxColumnWidth}
       aria-valuenow={Math.round(width)}
       aria-valuetext={`${Math.round(width)} pixels`}
       aria-disabled={disabled}
@@ -102,9 +104,9 @@ export function ColumnResizeHandle({
         gesture.current ??= { startX: 0, original: width, width };
         preview(
           e.key === "Home"
-            ? 100
+            ? minColumnWidth
             : e.key === "End"
-              ? 800
+              ? maxColumnWidth
               : gesture.current.width + (e.key === "ArrowRight" ? 1 : -1) * (e.shiftKey ? 50 : 10),
         );
       }}

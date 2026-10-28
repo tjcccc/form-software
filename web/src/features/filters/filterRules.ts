@@ -1,4 +1,5 @@
 import type { Field, Filter } from "../../api/types";
+export const maxRelationChoices = 100;
 export const emptyCheck = (op: Filter["op"]) => op === "empty" || op === "not_empty";
 export const multipleChoice = (op: Filter["op"]) => op === "any_of" || op === "none_of";
 export function operators(field?: Field): { value: Filter["op"]; label: string }[] {
@@ -63,7 +64,7 @@ export function conditionError(filter: Filter, field?: Field) {
     const ids = multipleChoice(filter.op) ? filter.value : [filter.value];
     return Array.isArray(ids) &&
       ids.length > 0 &&
-      ids.length <= 100 &&
+      ids.length <= maxRelationChoices &&
       ids.every((id) => typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
       ? ""
       : "Select at least one related record.";

@@ -18,11 +18,11 @@
   },
   "overrides": [
     {
-      "files": ["web/src/styles/{app,editors,table,tokens}.css"],
+      "files": ["web/src/styles/{app,editors,filters,schema,table,table-editing,tokens}.css"],
       "rules": { "no-descending-specificity": null }
     },
     {
-      "files": ["web/src/styles/editors.css"],
+      "files": ["web/src/styles/{editors,schema}.css"],
       "rules": { "selector-max-specificity": "0,3,1" }
     },
     {
@@ -30,7 +30,7 @@
       "rules": { "selector-max-specificity": "0,4,0" }
     },
     {
-      "files": ["web/src/styles/table.css"],
+      "files": ["web/src/styles/{table,table-editing,filters}.css"],
       "rules": { "selector-max-specificity": "0,4,1", "selector-max-compound-selectors": 4 }
     }
   ]

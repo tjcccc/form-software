@@ -1,5 +1,23 @@
 # Development log
 
+## 2026-10-28 · v0.4.2 · Repo health check, guards, and web unit tests
+
+Baseline: `pnpm lint` reported zero issues across ESLint, Stylelint, markdownlint, AutoCorrect, Prettier, rustfmt, and Clippy (`-D warnings`, native included on macOS). No crate dependency cycles; client and domain crates had no SQLx or store dependency, and server queries were confined to `auth.rs`. No Markdown hard-wrapping. Files over 800 lines: `web/src/styles/table.css` (1,429) and `editors.css` (997); `crates/server/tests/workflow.rs` (1,022) is a test and exempt.
+
+Guards: `pnpm lint` now runs `scripts/check-db-access.mjs` (client/domain crates may not depend on SQLx or `form-persistence`; server code outside `auth.rs` may not query PostgreSQL) and `scripts/check-file-sizes.mjs` (800-line ratchet, baseline in `.file-size-baseline.json`, generated `schema.d.ts` excluded). Both remain on demand; per project policy no hook or CI step was added.
+
+Refactors: split `table.css` into `table.css`, `table-editing.css`, and `filters.css`, and `editors.css` into `editors.css` and `schema.css`, at existing section boundaries and imported in the original order; the concatenated rules are identical, so the cascade is unchanged. Stylelint overrides carry over to the new files, and the size baseline now has no recorded exceptions. Web column-width bounds (100–800) and the 100-record relation-filter limit now come from shared constants instead of seven literals.
+
+Added a standalone `CLAUDE.md` that mirrors `AGENTS.md`; shared rules must change in both.
+
+Web unit tests: added Vitest (`pnpm test:web`) with 31 cases over pure helpers: decimal-string rounding and currency/percent formatting, duration/key/title/relation display, filter operators and validation (including the 100-choice relation boundary), group keys, and column layout/width clamping. Tests sit beside each module as `*.test.ts`, with shared fixtures in `web/src/testing/fixtures.ts`. Two deliberate mutations (rounding threshold, relation-ID sorting) made the relevant tests fail. Runs in the CI web job after `pnpm check`; component and browser tests remain absent, and the group-key test checks only the web side of the server contract.
+
+Deferred: the web grid derives row group keys locally (`grouping.ts`) in parallel with `push_group` in `form-persistence`; removing that duplication needs an API change, such as returning each record's group key, so it is now documented as a coupled pair in `docs/architecture.md`. `crates/persistence/src/records.rs` (562 lines) and `web/src/styles/app.css` (733) are past the 500-line review threshold but below the limit. Import graphs inside crates and web feature folders were not checked; no tool is installed.
+
+Validation: `pnpm lint`, `pnpm check`, `pnpm build`, a rule-order comparison of the split stylesheets, and positive/negative runs of the database-access guard. No visual check; the CSS order is identical.
+
+Checkpoint: synchronized workspace/web manifests, API metadata, Cargo lock metadata, and visible labels at `0.4.2`; regenerated contracts (version field only). Reused the passing lint, typecheck, unit tests, and build above; reran `cargo check` after the version change.
+
 ## 2026-10-19 · v0.4.1 · On-demand lint setup
 
 Added `pnpm lint` and `pnpm lint:fix` for project-authored JavaScript/TypeScript, CSS, Markdown, shell, and Rust. Retained ESLint and Prettier, double quotes, and 140-column web formatting; applied the global 120-column rustfmt baseline and inherited workspace Clippy rules. Added pinned lint dependencies and documented system-tool setup. No hooks, Git hook configuration, or CI changes were made. Generated contracts and runtime/build output remain excluded; the project-owned MVP specification is included. HTML and SQL linting remain deferred.

@@ -1,4 +1,7 @@
 import type { Field, FormSchema, ViewConfig } from "../../api/types";
+export const minColumnWidth = 100;
+export const maxColumnWidth = 800;
+export const clampColumnWidth = (width: number) => Math.min(maxColumnWidth, Math.max(minColumnWidth, Math.round(width)));
 export function orderedFields(schema: FormSchema, config: ViewConfig) {
   const active = schema.fields.filter((f) => !f.archived_at);
   const configured = config.columns.map((c) => active.find((f) => f.id === c.field_id)).filter((f): f is Field => !!f);

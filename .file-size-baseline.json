@@ -1,0 +1,42 @@
+{
+  "limit": 800,
+  "extensions": [
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".py",
+    ".rs",
+    ".go",
+    ".cs",
+    ".swift",
+    ".kt",
+    ".java",
+    ".vue",
+    ".svelte",
+    ".css",
+    ".scss"
+  ],
+  "exclude": [
+    "dist/*",
+    "*/dist/*",
+    "build/*",
+    "*/build/*",
+    "vendor/*",
+    "*/vendor/*",
+    "*.min.*",
+    "*.generated.*",
+    "*/__generated__/*",
+    "*.test.*",
+    "*.spec.*",
+    "test_*.py",
+    "*/tests/*",
+    "tests/*",
+    "*/__tests__/*",
+    "*/fixtures/*",
+    "web/src/api/schema.d.ts"
+  ],
+  "files": {}
+}

@@ -67,6 +67,8 @@ if (fix) {
   run("cargo", ["clippy", ...workspace, "--all-targets", "--fix", "--allow-dirty", "--allow-staged", "--", "-D", "warnings"]);
 }
 pnpm("prettier", [fix ? "--write" : "--check"], formatted);
+run("node", ["scripts/check-db-access.mjs"]);
+run("node", ["scripts/check-file-sizes.mjs"]);
 run("cargo", ["fmt", "--all", ...(fix ? [] : ["--", "--check"])]);
 run("cargo", ["clippy", ...workspace, "--all-targets", "--", "-D", "warnings"]);
 process.exitCode = failed ? 1 : 0;
